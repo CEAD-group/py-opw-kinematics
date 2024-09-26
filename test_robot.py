@@ -1,5 +1,5 @@
 # %%
-from py_opw_kinematics.py_opw_kinematics import PyOPWKinematics
+from py_opw_kinematics.py_opw_kinematics import Robot, EulerConvention, KinematicModel
 from math import pi
 import numpy as np
 import pytest
@@ -37,9 +37,10 @@ import pytest
 @pytest.mark.parametrize("s3", [1, -1])
 @pytest.mark.parametrize("s4", [1, -1])
 @pytest.mark.parametrize("s5", [1, -1])
+@pytest.mark.xfail
 def test_poses(a1_sign, a2_sign, s1, s2, s3, s4, s5):
     offset1, offset2, offset3, offset4 = 0, 0, 0, 0
-    robot = PyOPWKinematics(
+    kinematic_model = KinematicModel(
         a1=a1_sign * 400.333,  # lengte_as_1_2 * -1
         a2=a2_sign * 251.449,  # hoogte_3_4
         b=0,
@@ -51,29 +52,30 @@ def test_poses(a1_sign, a2_sign, s1, s2, s3, s4, s5):
         sign_corrections=[s1, s2, s3, s4, s5, -1],
         has_parallellogram=True,
     )
+    euler_convention = EulerConvention("XYZ", extrinsic=True, degrees=True)
+    robot = Robot(kinematic_model, euler_convention)
 
-    with pytest.raises(Exception):
-        t, r_rad = robot.forward(joints=np.deg2rad([0, 0, -90, 0, 0, 0]))
-        assert np.allclose(t, [2073.926, 0.0, 2259.005], atol=1e-3)
+    t, r_rad = robot.forward(joints=[0, 0, -90, 0, 0, 0])
+    assert np.allclose(t, [2073.926, 0.0, 2259.005], atol=1e-3)
 
-        t, r_rad = robot.forward(joints=np.deg2rad([10, 0, -90, 0, 0, 0]))
-        assert np.allclose(t, [2042.418, -360.133, 2259.005], atol=1e-3)
+    t, r_rad = robot.forward(joints=[10, 0, -90, 0, 0, 0])
+    assert np.allclose(t, [2042.418, -360.133, 2259.005], atol=1e-3)
 
-        t, r_rad = robot.forward(joints=np.deg2rad([10, 10, -90, 0, 0, 0]))
-        assert np.allclose(t, [2243.792, -395.641, 2241.115], atol=1e-3)
+    t, r_rad = robot.forward(joints=[10, 10, -90, 0, 0, 0])
+    assert np.allclose(t, [2243.792, -395.641, 2241.115], atol=1e-3)
 
-        t, r_rad = robot.forward(joints=np.deg2rad([0, 0, -90, 0, 10, 0]))
-        assert np.allclose(t, [2070.432, 0.0, 2219.066], atol=1e-3)
+    t, r_rad = robot.forward(joints=[0, 0, -90, 0, 10, 0])
+    assert np.allclose(t, [2070.432, 0.0, 2219.066], atol=1e-3)
 
-        t, r_rad = robot.forward(joints=np.deg2rad([0, 0, -90, 10, 10, 0]))
-        assert np.allclose(t, [2070.432, -6.935, 2219.673], atol=1e-3)
+    t, r_rad = robot.forward(joints=[0, 0, -90, 10, 10, 0])
+    assert np.allclose(t, [2070.432, -6.935, 2219.673], atol=1e-3)
 
-        t, r_rad = robot.forward(joints=np.deg2rad([10, 20, -90, 30, 20, 10]))
-        print(np.allclose(t, [2118.558, -477.396, 2119.864], atol=1e-3))
-        print(t)
-        print(
-            f"{a1_sign=}, {a2_sign=}, {offset1=}, {offset2=}, {offset3=}, {offset4=}, {s1=}, {s2=}, {s3=}, {s4=}, {s5=}"
-        )
+    t, r_rad = robot.forward(joints=[10, 20, -90, 30, 20, 10])
+    print(np.allclose(t, [2118.558, -477.396, 2119.864], atol=1e-3))
+    print(t)
+    print(
+        f"{a1_sign=}, {a2_sign=}, {offset1=}, {offset2=}, {offset3=}, {offset4=}, {s1=}, {s2=}, {s3=}, {s4=}, {s5=}"
+    )
 
 
 # a1_sign = -1, offset1 = 3.141592653589793, offset2 = 0, offset3 = 0, offset4 = 3.141592653589793, s1 = -1, s2 = -1, s3 = 1, s4 = -1, s5 = 1

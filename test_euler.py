@@ -5,7 +5,7 @@ import numpy as np
 
 
 @pytest.mark.parametrize("extrinsic", [True, False])
-@pytest.mark.parametrize("seq", ["XYZ", "XZY"])
+@pytest.mark.parametrize("seq", ["XYZ", "XZY", "ZYX", "ZXY"])
 @pytest.mark.parametrize("angles", [[30, 0, 50], [60, 40, 90]])
 def test_euler_convention_to_rotation_matrix(extrinsic, seq, angles):
     # Create EulerConvention object
@@ -26,10 +26,10 @@ def test_euler_convention_to_rotation_matrix(extrinsic, seq, angles):
 
 
 @pytest.mark.parametrize("in_extrinsic", [True, False])
-@pytest.mark.parametrize("in_seq", ["XYZ", "XZY"])
+@pytest.mark.parametrize("in_seq", ["XYZ", "XZY", "ZYX", "ZXY"])
 @pytest.mark.parametrize("in_angles", [[30, 0, 50], [60, 40, 90]])
 @pytest.mark.parametrize("out_extrinsic", [True, False])
-@pytest.mark.parametrize("out_seq", ["XYZ", "XZY"])
+@pytest.mark.parametrize("out_seq", ["XYZ", "XZY", "YXZ", "YZX"])
 def test_euler_convention_to_other_convention(
     in_extrinsic, in_seq, in_angles, out_extrinsic, out_seq
 ):
