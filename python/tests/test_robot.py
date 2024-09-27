@@ -1,5 +1,5 @@
 # %%
-from py_opw_kinematics.py_opw_kinematics import Robot, EulerConvention, KinematicModel
+from py_opw_kinematics import Robot, EulerConvention, KinematicModel
 from math import pi
 import numpy as np
 import pytest
