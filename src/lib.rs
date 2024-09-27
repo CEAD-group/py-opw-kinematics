@@ -162,6 +162,26 @@ impl KinematicModel {
             has_parallellogram,
         })
     }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "KinematicModel(a1={}, a2={}, b={}, c1={}, c2={}, c3={}, c4={}, offsets={:?}, sign_corrections={:?}, has_parallellogram={})",
+            self.parameters.a1,
+            self.parameters.a2,
+            self.parameters.b,
+            self.parameters.c1,
+            self.parameters.c2,
+            self.parameters.c3,
+            self.parameters.c4,
+            self.parameters.offsets,
+            self.parameters.sign_corrections,
+            self.has_parallellogram // capitalize the first letter
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
 }
 #[pyclass]
 struct Robot {
@@ -242,7 +262,7 @@ impl Robot {
 }
 
 /// Module initialization for Python
-#[pymodule]
+#[pymodule(name = "_internal")]
 fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EulerConvention>()?;
     m.add_class::<KinematicModel>()?;
