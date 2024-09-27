@@ -8,6 +8,7 @@ use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 #[pyclass]
 #[derive(Clone)]
 struct EulerConvention {
+    #[allow(dead_code)]
     sequence: String,
     extrinsic: bool,
     degrees: bool,
