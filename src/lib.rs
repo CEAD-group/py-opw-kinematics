@@ -114,6 +114,21 @@ impl EulerConvention {
             [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)]],
         ]
     }
+
+    /// __repr__ method for EulerConvention
+    fn __repr__(&self) -> String {
+        format!(
+            "EulerConvention(sequence='{}', extrinsic={}, degrees={})",
+            self.sequence,
+            if self.extrinsic { "True" } else { "False" },
+            if self.degrees { "True" } else { "False" }
+        )
+    }
+
+    /// __str__ method for EulerConvention
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
 }
 
 #[pyclass]
@@ -175,7 +190,7 @@ impl KinematicModel {
             self.parameters.c4,
             self.parameters.offsets,
             self.parameters.sign_corrections,
-            self.has_parallellogram // capitalize the first letter
+            if self.has_parallellogram { "True" } else { "False" }
         )
     }
 
@@ -183,6 +198,7 @@ impl KinematicModel {
         self.__repr__()
     }
 }
+
 #[pyclass]
 struct Robot {
     robot: OPWKinematics,
@@ -236,7 +252,6 @@ impl Robot {
         if self.has_parallellogram {
             solutions
                 .into_iter()
-                .clone()
                 .map(|mut x| {
                     x[2] -= x[1];
                     x
