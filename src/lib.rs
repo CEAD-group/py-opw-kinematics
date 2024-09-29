@@ -261,21 +261,28 @@ impl Robot {
     /// Inverse kinematics: calculates the joint solutions for a given pose
     fn inverse(&self, pose: ([f64; 3], [f64; 3])) -> Vec<[f64; 6]> {
         let translation = nalgebra::Translation3::from(pose.0);
-
-        let rotation = self.euler_convention._to_rotation_matrix(pose.1);
-        let iso_pose = Isometry3::from_parts(translation, rotation.into());
-        let solutions = self.robot.inverse(&iso_pose);
-        if self.has_parallellogram {
-            solutions
-                .into_iter()
-                .map(|mut x| {
-                    x[2] -= x[1];
-                    x
-                })
-                .collect()
+        let euler = if self.degrees {
+            pose.1.map(|angle| angle.to_radians())
         } else {
-            solutions
+            pose.1
+        };
+        let rotation =
+            self.euler_convention._to_rotation_matrix(euler) * self.ee_rotation.inverse();
+
+        let iso_pose = Isometry3::from_parts(translation, rotation.into());
+        let mut solutions = self.robot.inverse(&iso_pose);
+
+        // Handle special case for parallelogram configuration
+        if self.has_parallellogram {
+            solutions.iter_mut().for_each(|x| x[2] -= x[1]);
         }
+
+        if self.degrees {
+            solutions
+                .iter_mut()
+                .for_each(|x| *x = x.map(|angle| angle.to_degrees()));
+        }
+        solutions
     }
 
     /// Inverse kinematics with continuation from close joints
