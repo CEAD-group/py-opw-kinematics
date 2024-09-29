@@ -205,22 +205,32 @@ struct Robot {
     has_parallellogram: bool,
     degrees: bool,
     euler_convention: EulerConvention,
+    ee_rotation: Rotation3<f64>,
     _internal_euler_convention: EulerConvention,
 }
 
 #[pymethods]
 impl Robot {
     #[new]
-    fn new(kinematic_model: KinematicModel, euler_convention: EulerConvention) -> PyResult<Self> {
+    fn new(
+        kinematic_model: KinematicModel,
+        euler_convention: EulerConvention,
+        mut ee_rotation: [f64; 3],
+    ) -> PyResult<Self> {
         let robot = OPWKinematics::new(kinematic_model.parameters);
         let has_parallellogram = kinematic_model.has_parallellogram;
         let degrees = euler_convention.degrees;
+        if degrees {
+            ee_rotation = ee_rotation.map(|angle| angle.to_radians());
+        }
+        let ee_rotation_as_matrix = euler_convention._to_rotation_matrix(ee_rotation);
         let _internal_euler_convention = EulerConvention::new("XYZ".to_string(), false, degrees)?;
         Ok(Robot {
             robot,
             has_parallellogram,
             degrees,
             euler_convention,
+            ee_rotation: ee_rotation_as_matrix,
             _internal_euler_convention,
         })
     }
@@ -235,10 +245,16 @@ impl Robot {
         }
         let pose: Pose = self.robot.forward(&joints);
         let translation = pose.translation.vector.into();
-        let rotation: [f64; 3] = self
-            .euler_convention
-            ._from_rotation_matrix(pose.rotation.to_rotation_matrix());
 
+        let robot_rotation_matrix = pose.rotation.to_rotation_matrix();
+        let combined_rotation = robot_rotation_matrix * self.ee_rotation;
+
+        let mut rotation: [f64; 3] = self
+            .euler_convention
+            ._from_rotation_matrix(combined_rotation);
+        if self.degrees {
+            rotation = rotation.map(|angle| angle.to_degrees());
+        }
         (translation, rotation)
     }
 

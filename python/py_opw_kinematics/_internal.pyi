@@ -41,7 +41,10 @@ class Robot:
     _internal_euler_convention: EulerConvention
 
     def __init__(
-        self, kinematic_model: KinematicModel, euler_convention: EulerConvention
+        self,
+        kinematic_model: KinematicModel,
+        euler_convention: EulerConvention,
+        ee_rotation: Tuple[float, float, float],
     ) -> None: ...
     def forward(
         self, joints: Tuple[float, float, float, float, float, float]
