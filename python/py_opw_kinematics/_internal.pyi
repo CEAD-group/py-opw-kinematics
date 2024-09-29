@@ -38,6 +38,7 @@ class Robot:
     has_parallellogram: bool
     degrees: bool
     euler_convention: EulerConvention
+    ee_rotation: Tuple[float, float, float]
     _internal_euler_convention: EulerConvention
 
     def __init__(

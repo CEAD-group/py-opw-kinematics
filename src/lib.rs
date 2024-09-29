@@ -205,34 +205,66 @@ struct Robot {
     has_parallellogram: bool,
     degrees: bool,
     euler_convention: EulerConvention,
-    ee_rotation: Rotation3<f64>,
+    _ee_rotation_matrix: Rotation3<f64>, // Store the ee_rotation as a private field
     _internal_euler_convention: EulerConvention,
 }
 
 #[pymethods]
 impl Robot {
     #[new]
+    #[pyo3(signature = (kinematic_model, euler_convention, ee_rotation=None))]
     fn new(
         kinematic_model: KinematicModel,
         euler_convention: EulerConvention,
-        mut ee_rotation: [f64; 3],
+        ee_rotation: Option<[f64; 3]>,
     ) -> PyResult<Self> {
         let robot = OPWKinematics::new(kinematic_model.parameters);
         let has_parallellogram = kinematic_model.has_parallellogram;
         let degrees = euler_convention.degrees;
-        if degrees {
-            ee_rotation = ee_rotation.map(|angle| angle.to_radians());
-        }
-        let ee_rotation_as_matrix = euler_convention._to_rotation_matrix(ee_rotation);
+
+        // Initialize the internal rotation matrix to identity as a placeholder
+        let _ee_rotation_matrix = Rotation3::identity(); // Assuming Rotation3::identity() is a valid way to initialize to identity
+
         let _internal_euler_convention = EulerConvention::new("XYZ".to_string(), false, degrees)?;
-        Ok(Robot {
+
+        // Create an instance with initial values
+        let mut robot_instance = Robot {
             robot,
             has_parallellogram,
             degrees,
             euler_convention,
-            ee_rotation: ee_rotation_as_matrix,
+            _ee_rotation_matrix,
             _internal_euler_convention,
-        })
+        };
+
+        // Use the setter to assign ee_rotation if provided
+        robot_instance.set_ee_rotation(ee_rotation.unwrap_or([0.0, 0.0, 0.0]))?;
+
+        Ok(robot_instance)
+    }
+
+    /// Getter for ee_rotation
+    #[getter]
+    fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
+        let euler_angles = self
+            .euler_convention
+            ._from_rotation_matrix(self._ee_rotation_matrix);
+        if self.degrees {
+            Ok(euler_angles.map(|angle| angle.to_degrees()))
+        } else {
+            Ok(euler_angles)
+        }
+    }
+
+    /// Setter for ee_rotation
+    #[setter]
+    fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
+        let mut ee_rotation = ee_rotation;
+        if self.degrees {
+            ee_rotation = ee_rotation.map(|angle| angle.to_radians());
+        }
+        self._ee_rotation_matrix = self.euler_convention._to_rotation_matrix(ee_rotation);
+        Ok(())
     }
 
     /// Forward kinematics: calculates the pose for given joints
@@ -247,7 +279,7 @@ impl Robot {
         let translation = pose.translation.vector.into();
 
         let robot_rotation_matrix = pose.rotation.to_rotation_matrix();
-        let combined_rotation = robot_rotation_matrix * self.ee_rotation;
+        let combined_rotation = robot_rotation_matrix * self._ee_rotation_matrix;
 
         let mut rotation: [f64; 3] = self
             .euler_convention
@@ -267,7 +299,7 @@ impl Robot {
             pose.1
         };
         let rotation =
-            self.euler_convention._to_rotation_matrix(euler) * self.ee_rotation.inverse();
+            self.euler_convention._to_rotation_matrix(euler) * self._ee_rotation_matrix.inverse();
 
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = self.robot.inverse(&iso_pose);

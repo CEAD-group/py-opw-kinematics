@@ -93,7 +93,6 @@ def test_robot_kinematics_roundtrip(
     # Define Euler convention and create robot
     euler_convention = EulerConvention("XYZ", extrinsic=extrinsic, degrees=degrees)
     robot = Robot(kinematic_model, euler_convention, ee_rotation=ee_rotation)
-
     joints = joints if degrees else np.deg2rad(joints)
 
     # Perform forward kinematics to get the pose
@@ -106,3 +105,18 @@ def test_robot_kinematics_roundtrip(
     assert any(
         np.allclose(solution, joints, atol=1e-3) for solution in joint_solutions
     ), f"No valid joint solution found for joints: {joints}, {joint_solutions}"
+
+
+def test_settings_and_getting_ee_rotation(known_robot):
+    robot = known_robot
+    robot.ee_rotation = [0, 0, 0]
+    assert np.allclose(robot.ee_rotation, [0, 0, 0])
+
+    _translation, rotation = robot.forward(joints=[0, 0, 0, 0, 0, 0])
+
+    assert np.allclose(rotation, robot.ee_rotation)
+    robot.ee_rotation = [10, -40, 30]
+    assert np.allclose(robot.ee_rotation, [10, -40, 30])
+
+    _translation, rotation = robot.forward(joints=[0, 0, 0, 0, 0, 0])
+    assert np.allclose(rotation, robot.ee_rotation)
