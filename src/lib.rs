@@ -8,7 +8,6 @@ use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 #[pyclass]
 #[derive(Clone)]
 struct EulerConvention {
-    #[allow(dead_code)]
     sequence: String,
     extrinsic: bool,
     degrees: bool,
@@ -16,12 +15,19 @@ struct EulerConvention {
 }
 
 impl EulerConvention {
-    fn _from_rotation_matrix(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
+    fn _from_rotation_matrix_radians(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
         let (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
         angles
     }
-
-    fn _to_rotation_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
+    fn _from_rotation_matrix(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
+        let angles = self._from_rotation_matrix_radians(rot);
+        if self.degrees {
+            angles.map(|angle| angle.to_degrees())
+        } else {
+            angles
+        }
+    }
+    fn _to_rotation_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
         let [a1, a2, a3] = angles;
         let r1 = Rotation3::from_axis_angle(&self._seq[0], a1);
         let r2 = Rotation3::from_axis_angle(&self._seq[1], a2);
@@ -31,6 +37,13 @@ impl EulerConvention {
         } else {
             r1 * r2 * r3
         }
+    }
+    fn _to_rotation_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
+        let mut angles = angles;
+        if self.degrees {
+            angles = angles.map(|angle| angle.to_radians());
+        }
+        self._to_rotation_matrix_radians(angles)
     }
 }
 
@@ -70,43 +83,19 @@ impl EulerConvention {
         })
     }
 
-    fn convert(&self, other: &EulerConvention, mut angles: [f64; 3]) -> PyResult<[f64; 3]> {
-        // Convert from degrees to radians if necessary
-        if self.degrees {
-            angles = angles.map(|angle| angle.to_radians());
-        }
-
-        // Perform the conversion using the internal logic (in radians)
+    fn convert(&self, other: &EulerConvention, angles: [f64; 3]) -> PyResult<[f64; 3]> {
         let rot_matrix = self._to_rotation_matrix(angles);
-        let mut result = other._from_rotation_matrix(rot_matrix);
-
-        // Convert back to degrees if necessary
-        if self.degrees {
-            result = result.map(|angle| angle.to_degrees());
-        }
+        let result = other._from_rotation_matrix(rot_matrix);
 
         Ok(result)
     }
 
     fn from_rotation_matrix(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
         let rotation = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
-        let mut angles = self._from_rotation_matrix(rotation);
-
-        // Convert back to degrees if necessary
-        if self.degrees {
-            angles = angles.map(|angle| angle.to_degrees());
-        }
-
-        angles
+        self._from_rotation_matrix(rotation)
     }
 
-    fn to_rotation_matrix(&self, mut angles: [f64; 3]) -> [[f64; 3]; 3] {
-        // Convert from degrees to radians if necessary
-        if self.degrees {
-            angles = angles.map(|angle| angle.to_radians());
-        }
-
-        // Perform the conversion using the internal logic (in radians)
+    fn to_rotation_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
         let matrix = self._to_rotation_matrix(angles).into_inner();
         [
             [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)]],
@@ -115,7 +104,6 @@ impl EulerConvention {
         ]
     }
 
-    /// __repr__ method for EulerConvention
     fn __repr__(&self) -> String {
         format!(
             "EulerConvention(sequence='{}', extrinsic={}, degrees={})",
@@ -125,7 +113,6 @@ impl EulerConvention {
         )
     }
 
-    /// __str__ method for EulerConvention
     fn __str__(&self) -> String {
         self.__repr__()
     }
@@ -203,7 +190,6 @@ impl KinematicModel {
 struct Robot {
     robot: OPWKinematics,
     has_parallellogram: bool,
-    degrees: bool,
     euler_convention: EulerConvention,
     _ee_rotation_matrix: Rotation3<f64>, // Store the ee_rotation as a private field
     _internal_euler_convention: EulerConvention,
@@ -231,7 +217,6 @@ impl Robot {
         let mut robot_instance = Robot {
             robot,
             has_parallellogram,
-            degrees,
             euler_convention,
             _ee_rotation_matrix,
             _internal_euler_convention,
@@ -249,20 +234,13 @@ impl Robot {
         let euler_angles = self
             .euler_convention
             ._from_rotation_matrix(self._ee_rotation_matrix);
-        if self.degrees {
-            Ok(euler_angles.map(|angle| angle.to_degrees()))
-        } else {
-            Ok(euler_angles)
-        }
+        Ok(euler_angles)
     }
 
     /// Setter for ee_rotation
     #[setter]
     fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
-        let mut ee_rotation = ee_rotation;
-        if self.degrees {
-            ee_rotation = ee_rotation.map(|angle| angle.to_radians());
-        }
+        let ee_rotation = ee_rotation;
         self._ee_rotation_matrix = self.euler_convention._to_rotation_matrix(ee_rotation);
         Ok(())
     }
@@ -272,7 +250,7 @@ impl Robot {
         if self.has_parallellogram {
             joints[2] += joints[1];
         }
-        if self.degrees {
+        if self.euler_convention.degrees {
             joints = joints.map(|x| x.to_radians());
         }
         let pose: Pose = self.robot.forward(&joints);
@@ -281,25 +259,17 @@ impl Robot {
         let robot_rotation_matrix = pose.rotation.to_rotation_matrix();
         let combined_rotation = robot_rotation_matrix * self._ee_rotation_matrix;
 
-        let mut rotation: [f64; 3] = self
+        let rotation: [f64; 3] = self
             .euler_convention
             ._from_rotation_matrix(combined_rotation);
-        if self.degrees {
-            rotation = rotation.map(|angle| angle.to_degrees());
-        }
         (translation, rotation)
     }
 
     /// Inverse kinematics: calculates the joint solutions for a given pose
     fn inverse(&self, pose: ([f64; 3], [f64; 3])) -> Vec<[f64; 6]> {
         let translation = nalgebra::Translation3::from(pose.0);
-        let euler = if self.degrees {
-            pose.1.map(|angle| angle.to_radians())
-        } else {
-            pose.1
-        };
         let rotation =
-            self.euler_convention._to_rotation_matrix(euler) * self._ee_rotation_matrix.inverse();
+            self.euler_convention._to_rotation_matrix(pose.1) * self._ee_rotation_matrix.inverse();
 
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = self.robot.inverse(&iso_pose);
@@ -309,7 +279,7 @@ impl Robot {
             solutions.iter_mut().for_each(|x| x[2] -= x[1]);
         }
 
-        if self.degrees {
+        if self.euler_convention.degrees {
             solutions
                 .iter_mut()
                 .for_each(|x| *x = x.map(|angle| angle.to_degrees()));

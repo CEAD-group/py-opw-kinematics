@@ -36,7 +36,6 @@ class KinematicModel:
 class Robot:
     # robot: "OPWKinematics"  # Assuming OPWKinematics is defined in the Rust module
     has_parallellogram: bool
-    degrees: bool
     euler_convention: EulerConvention
     ee_rotation: Tuple[float, float, float]
     _internal_euler_convention: EulerConvention
