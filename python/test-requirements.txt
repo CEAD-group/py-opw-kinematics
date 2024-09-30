@@ -3,6 +3,4 @@ pytest
 scipy
 numpy
 polars
-ruff
-polars
 pyarrow

@@ -1,5 +1,5 @@
 # %%
-from py_opw_kinematics import KinematicModel, Robot, EulerConvention
+from py_opw_kinematics import KinematicModel
 
 km = KinematicModel(
     a1=1,
