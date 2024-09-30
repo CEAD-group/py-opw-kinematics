@@ -124,3 +124,30 @@ def test_settings_and_getting_ee_rotation(known_robot):
 
     _translation, rotation = robot.forward(joints=[0, 0, 0, 0, 0, 0])
     assert np.allclose(rotation, robot.ee_rotation)
+
+
+@pytest.mark.parametrize(
+    "initial_translation, joint_angles, expected_diff",
+    [
+        ([0, 0, 0], [0, 0, -90, 0, 0, 0], [0, 0, 0]),
+        ([10, 20, 30], [0, 0, -90, 0, 0, 0], [10, 20, 30]),
+        ([10, 20, 30], [90, 0, -90, 0, 0, 0], [20, -10, 30]),
+    ],
+)
+def test_ee_translation(known_robot, initial_translation, joint_angles, expected_diff):
+    robot = known_robot
+    robot.ee_rotation = [0, -90, 0]
+    robot.ee_translation = [0, 0, 0]
+    initial_translation_result, _ = robot.forward(joints=joint_angles)
+    robot.ee_translation = initial_translation
+    updated_translation_result, _ = robot.forward(joints=joint_angles)
+
+    # Calculate translation differences
+    translation_diff = np.array(updated_translation_result) - np.array(
+        initial_translation_result
+    )
+
+    # Assert translation differences
+    assert np.allclose(
+        translation_diff, expected_diff
+    ), f"Expected translation difference {expected_diff}, but got {translation_diff}"

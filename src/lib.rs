@@ -269,7 +269,9 @@ struct Robot {
     robot: OPWKinematics,
     has_parallellogram: bool,
     euler_convention: EulerConvention,
-    _ee_rotation_matrix: Rotation3<f64>, // Store the ee_rotation as a private field
+    ee_rotation: [f64; 3],
+    ee_translation: Vector3<f64>,
+    _ee_rotation_matrix: Rotation3<f64>,
     _internal_euler_convention: EulerConvention,
     _kinematic_model: KinematicModel,
 }
@@ -277,11 +279,12 @@ struct Robot {
 #[pymethods]
 impl Robot {
     #[new]
-    #[pyo3(signature = (kinematic_model, euler_convention, ee_rotation=None))]
+    #[pyo3(signature = (kinematic_model, euler_convention, ee_rotation=None, ee_translation=None))]
     fn new(
         kinematic_model: KinematicModel,
         euler_convention: EulerConvention,
         ee_rotation: Option<[f64; 3]>,
+        ee_translation: Option<[f64; 3]>,
     ) -> PyResult<Self> {
         let robot = kinematic_model.to_opw_kinematics(euler_convention.degrees);
         let has_parallellogram = kinematic_model.has_parallellogram;
@@ -297,13 +300,15 @@ impl Robot {
             robot,
             has_parallellogram,
             euler_convention,
+            ee_rotation: ee_rotation.unwrap_or([0.0, 0.0, 0.0]),
+            ee_translation: ee_translation.unwrap_or([0.0, 0.0, 0.0]).into(),
             _ee_rotation_matrix,
             _internal_euler_convention,
             _kinematic_model: kinematic_model,
         };
 
         // Use the setter to assign ee_rotation if provided
-        robot_instance.set_ee_rotation(ee_rotation.unwrap_or([0.0, 0.0, 0.0]))?;
+        robot_instance.set_ee_rotation(robot_instance.ee_rotation)?;
 
         Ok(robot_instance)
     }
@@ -318,10 +323,11 @@ impl Robot {
             .join("\n");
 
         format!(
-            "Robot(\n    kinematic_model=\n{},\n    euler_convention={},\n    ee_rotation={:?}\n)",
+            "Robot(\n    kinematic_model=\n{},\n    euler_convention={},\n    ee_rotation={:?},\n    ee_translation={:?}\n)",
             km_repr,
             self.euler_convention.__repr__(),
-            self.get_ee_rotation().unwrap() // Assuming the getter works and returns the current ee_rotation
+            self.ee_rotation,
+            self.ee_translation
         )
     }
 
@@ -340,24 +346,31 @@ impl Robot {
         Ok(())
     }
 
+    #[getter]
+    fn get_ee_translation(&self) -> [f64; 3] {
+        self.ee_translation.into()
+    }
+    #[setter]
+    fn set_ee_translation(&mut self, ee_translation: [f64; 3]) {
+        self.ee_translation = ee_translation.into();
+    }
+
     /// Forward kinematics: calculates the pose for given joints
     fn forward(&self, mut joints: [f64; 6]) -> ([f64; 3], [f64; 3]) {
         if self.has_parallellogram {
             joints[2] += joints[1];
         }
         if self.euler_convention.degrees {
-            joints = joints.map(|x| x.to_radians());
+            joints.iter_mut().for_each(|x| *x = x.to_radians());
         }
         let pose: Pose = self.robot.forward(&joints);
-        let translation = pose.translation.vector.into();
-
-        let robot_rotation_matrix = pose.rotation.to_rotation_matrix();
-        let combined_rotation = robot_rotation_matrix * self._ee_rotation_matrix;
-
-        let rotation: [f64; 3] = self
+        let combined_rotation = pose.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
+        let translation = pose.translation.vector + combined_rotation * self.ee_translation;
+        let rotation = self
             .euler_convention
             ._from_rotation_matrix(combined_rotation);
-        (translation, rotation)
+
+        (translation.into(), rotation)
     }
 
     /// Inverse kinematics: calculates the joint solutions for a given pose
