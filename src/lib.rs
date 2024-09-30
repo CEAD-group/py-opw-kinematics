@@ -307,7 +307,6 @@ impl Robot {
     #[pyo3(signature = (poses, current_joints=None))]
     fn batch_inverse(
         &self,
-        py: Python,
         poses: PyDataFrame,
         current_joints: Option<Vec<f64>>,
     ) -> PyResult<PyDataFrame> {
@@ -413,9 +412,27 @@ fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-fn extract_column_f64<'a>(df: &'a DataFrame, column_name: &str) -> PyResult<&'a Float64Chunked> {
-    df.column(column_name)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("{}", e)))?
-        .f64()
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("{}", e)))
+// Define a function that extracts a column, casting it to Float64Chunked.
+fn extract_column_f64(df: &DataFrame, column_name: &str) -> PyResult<Float64Chunked> {
+    let column = df.column(column_name).map_err(|e| {
+        PyErr::new::<PyValueError, _>(format!("Error extracting column '{}': {}", column_name, e))
+    })?;
+
+    // Attempt to cast the column to Float64 data type.
+    let casted_column = column.cast(&DataType::Float64).map_err(|e| {
+        PyErr::new::<PyValueError, _>(format!(
+            "Error casting column '{}' to f64: {}",
+            column_name, e
+        ))
+    })?;
+
+    // Convert the casted Series to Float64Chunked.
+    let chunked = casted_column.f64().map_err(|e| {
+        PyErr::new::<PyValueError, _>(format!(
+            "Error converting column '{}' to Float64Chunked: {}",
+            column_name, e
+        ))
+    })?;
+
+    Ok(chunked.clone()) // Return an owned clone to satisfy ownership requirements.
 }

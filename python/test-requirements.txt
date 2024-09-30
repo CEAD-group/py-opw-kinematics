@@ -5,3 +5,4 @@ numpy
 polars
 ruff
 polars
+pyarrow
