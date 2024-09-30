@@ -122,16 +122,62 @@ impl EulerConvention {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)] // Declare the class as frozen to provide immutability.
 #[derive(Clone)]
 struct KinematicModel {
-    parameters: Parameters,
+    a1: f64,
+    a2: f64,
+    b: f64,
+    c1: f64,
+    c2: f64,
+    c3: f64,
+    c4: f64,
+    offsets: [f64; 6],
+    flip_axes: [bool; 6], // Renamed and changed to boolean array
     has_parallellogram: bool,
+}
+
+impl KinematicModel {
+    fn to_opw_kinematics(&self, degrees: bool) -> OPWKinematics {
+        let sign_corrections = self.flip_axes.map(|x| if x { -1 } else { 1 });
+        OPWKinematics::new(Parameters {
+            a1: self.a1,
+            a2: self.a2,
+            b: self.b,
+            c1: self.c1,
+            c2: self.c2,
+            c3: self.c3,
+            c4: self.c4,
+            offsets: if degrees {
+                self.offsets
+                    .iter()
+                    .map(|&x| x.to_radians())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
+            } else {
+                self.offsets
+            },
+            sign_corrections,
+        })
+    }
 }
 
 #[pymethods]
 impl KinematicModel {
     #[new]
+    #[pyo3(signature = (
+        a1,
+        a2,
+        b,
+        c1,
+        c2,
+        c3,
+        c4,
+        offsets = [0.0; 6],
+        flip_axes = [false; 6],
+        has_parallellogram = false
+    ))]
     fn new(
         a1: f64,
         a2: f64,
@@ -141,52 +187,80 @@ impl KinematicModel {
         c3: f64,
         c4: f64,
         offsets: [f64; 6],
-        sign_corrections: [i32; 6],
+        flip_axes: [bool; 6],
         has_parallellogram: bool,
     ) -> PyResult<Self> {
-        let mut parameters = Parameters::new();
-        parameters.a1 = a1;
-        parameters.a2 = a2;
-        parameters.b = b;
-        parameters.c1 = c1;
-        parameters.c2 = c2;
-        parameters.c3 = c3;
-        parameters.c4 = c4;
-        parameters.offsets = offsets;
-        parameters.sign_corrections = sign_corrections.map(|x| x as i8);
-
-        // check that all signs are either -1 or 1
-        for sign in parameters.sign_corrections.iter() {
-            if *sign != 1 && *sign != -1 {
-                return Err(PyErr::new::<PyValueError, _>(
-                    "Sign correction must be either 1 or -1",
-                ));
-            }
-        }
         Ok(KinematicModel {
-            parameters,
+            a1,
+            a2,
+            b,
+            c1,
+            c2,
+            c3,
+            c4,
+            offsets,
+            flip_axes,
             has_parallellogram,
         })
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "KinematicModel(a1={}, a2={}, b={}, c1={}, c2={}, c3={}, c4={}, offsets={:?}, sign_corrections={:?}, has_parallellogram={})",
-            self.parameters.a1,
-            self.parameters.a2,
-            self.parameters.b,
-            self.parameters.c1,
-            self.parameters.c2,
-            self.parameters.c3,
-            self.parameters.c4,
-            self.parameters.offsets,
-            self.parameters.sign_corrections,
-            if self.has_parallellogram { "True" } else { "False" }
-        )
+    // Getter methods to provide access to attributes since the class is frozen.
+    #[getter]
+    fn a1(&self) -> f64 {
+        self.a1
     }
 
-    fn __str__(&self) -> String {
-        self.__repr__()
+    #[getter]
+    fn a2(&self) -> f64 {
+        self.a2
+    }
+
+    #[getter]
+    fn b(&self) -> f64 {
+        self.b
+    }
+
+    #[getter]
+    fn c1(&self) -> f64 {
+        self.c1
+    }
+
+    #[getter]
+    fn c2(&self) -> f64 {
+        self.c2
+    }
+
+    #[getter]
+    fn c3(&self) -> f64 {
+        self.c3
+    }
+
+    #[getter]
+    fn c4(&self) -> f64 {
+        self.c4
+    }
+
+    #[getter]
+    fn offsets(&self) -> Vec<f64> {
+        self.offsets.to_vec() // Convert the array to a Vec for easier handling in Python.
+    }
+
+    #[getter]
+    fn flip_axes(&self) -> Vec<bool> {
+        self.flip_axes.to_vec() // Convert the array to a Vec for easier handling in Python.
+    }
+
+    #[getter]
+    fn has_parallellogram(&self) -> bool {
+        self.has_parallellogram
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n    has_parallellogram={}\n)",
+            self.a1, self.a2, self.b, self.c1, self.c2, self.c3, self.c4,
+            self.offsets, self.flip_axes, self.has_parallellogram
+        )
     }
 }
 
@@ -197,6 +271,7 @@ struct Robot {
     euler_convention: EulerConvention,
     _ee_rotation_matrix: Rotation3<f64>, // Store the ee_rotation as a private field
     _internal_euler_convention: EulerConvention,
+    _kinematic_model: KinematicModel,
 }
 
 #[pymethods]
@@ -208,7 +283,7 @@ impl Robot {
         euler_convention: EulerConvention,
         ee_rotation: Option<[f64; 3]>,
     ) -> PyResult<Self> {
-        let robot = OPWKinematics::new(kinematic_model.parameters);
+        let robot = kinematic_model.to_opw_kinematics(euler_convention.degrees);
         let has_parallellogram = kinematic_model.has_parallellogram;
         let degrees = euler_convention.degrees;
 
@@ -224,6 +299,7 @@ impl Robot {
             euler_convention,
             _ee_rotation_matrix,
             _internal_euler_convention,
+            _kinematic_model: kinematic_model,
         };
 
         // Use the setter to assign ee_rotation if provided
@@ -232,7 +308,23 @@ impl Robot {
         Ok(robot_instance)
     }
 
-    /// Getter for ee_rotation
+    fn __repr__(&self) -> String {
+        let km_repr = self
+            ._kinematic_model
+            .__repr__()
+            .lines()
+            .map(|line| format!("    {}", line)) // Indent each line of KinematicModel's repr with 4 spaces
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            "Robot(\n    kinematic_model=\n{},\n    euler_convention={},\n    ee_rotation={:?}\n)",
+            km_repr,
+            self.euler_convention.__repr__(),
+            self.get_ee_rotation().unwrap() // Assuming the getter works and returns the current ee_rotation
+        )
+    }
+
     #[getter]
     fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
         let euler_angles = self
@@ -241,7 +333,6 @@ impl Robot {
         Ok(euler_angles)
     }
 
-    /// Setter for ee_rotation
     #[setter]
     fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
         let ee_rotation = ee_rotation;

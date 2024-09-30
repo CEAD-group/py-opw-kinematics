@@ -1,7 +1,5 @@
-from typing import List, Tuple, Literal
+from typing import List, Tuple
 import polars as pl
-
-Sign = Literal[-1, 1]
 
 class EulerConvention:
     sequence: str
@@ -29,8 +27,7 @@ class KinematicModel:
         c2: float,
         c3: float,
         c4: float,
-        offsets: Tuple[float, float, float, float, float, float],
-        sign_corrections: Tuple[Sign, Sign, Sign, Sign, Sign, Sign],
+        flip_axes: None | Tuple[bool, bool, bool, bool, bool, bool],
         has_parallellogram: bool,
     ) -> None: ...
 

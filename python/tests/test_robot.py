@@ -15,7 +15,7 @@ def known_robot():
         c3=1443.593,
         c4=230,
         offsets=[0] * 6,
-        sign_corrections=[-1, 1, -1, -1, 1, -1],
+        flip_axes=[True, False, True, True, False, True],
         has_parallellogram=True,
     )
 
@@ -63,7 +63,13 @@ def test_robot_forward_kinematics(
 @pytest.mark.parametrize("extrinsic", [True, False])
 @pytest.mark.parametrize("ee_rotation", [[0, 0, 0], [0, -90, 0], [30, 40, 60]])
 @pytest.mark.parametrize("degrees", [True, False])
-@pytest.mark.parametrize("sign_corrections", [[1, 1, 1, 1, 1, 1], [1, -1, 1, 1, -1, 1]])
+@pytest.mark.parametrize(
+    "flip_axes",
+    [
+        [False, False, False, False, False, False],
+        [False, True, False, False, True, False],
+    ],
+)
 @pytest.mark.parametrize("offsets", [[0, 0, 0, 0, 0, 0], [1, 2, 3, 4, 5, 6]])
 def test_robot_kinematics_roundtrip(
     joints,
@@ -71,7 +77,7 @@ def test_robot_kinematics_roundtrip(
     extrinsic,
     ee_rotation,
     degrees,
-    sign_corrections,
+    flip_axes,
     offsets,
 ):
     # Initialize Kinematic Model with known parameters and inlined signs
@@ -84,7 +90,7 @@ def test_robot_kinematics_roundtrip(
         c3=6,
         c4=7,
         offsets=offsets,
-        sign_corrections=sign_corrections,
+        flip_axes=flip_axes,
         has_parallellogram=has_parallellogram,
     )
 
