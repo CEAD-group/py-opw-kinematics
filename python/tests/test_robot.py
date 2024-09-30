@@ -1,10 +1,11 @@
 from py_opw_kinematics import Robot, EulerConvention, KinematicModel
 import numpy as np
 import pytest
+import polars as pl
 
 
 @pytest.fixture
-def known_robot():
+def example_robot():
     # Initialize Kinematic Model with known parameters and inlined signs
     kinematic_model = KinematicModel(
         a1=400.333,
@@ -41,9 +42,9 @@ def known_robot():
     ],
 )
 def test_robot_forward_kinematics(
-    known_robot, joints, expected_position, expected_orientation
+    example_robot, joints, expected_position, expected_orientation
 ):
-    robot = known_robot
+    robot = example_robot
 
     # Calculate forward kinematics
     t, r = robot.forward(joints=joints)
@@ -68,9 +69,9 @@ def test_robot_forward_kinematics(
     ],
 )
 def test_robot_forward_kinematics_with_ee_translation(
-    known_robot, joints, expected_position, expected_orientation
+    example_robot, joints, expected_position, expected_orientation
 ):
-    robot = known_robot
+    robot = example_robot
     robot.ee_translation = [234.096, 132.2, -551.725]
     # Calculate forward kinematics
     t, r = robot.forward(joints=joints)
@@ -83,8 +84,8 @@ def test_robot_forward_kinematics_with_ee_translation(
         assert np.allclose(r, expected_orientation, atol=1e-3)
 
 
-def test_robot_inverse_with_ee_translation(known_robot):
-    robot = known_robot
+def test_robot_inverse_with_ee_translation(example_robot):
+    robot = example_robot
     robot.ee_translation = [234.096, 132.2, -551.725]
     expected_joints = [10, 20, -90, 30, 20, 10]
 
@@ -164,8 +165,8 @@ def test_robot_kinematics_roundtrip(
     ), f"No valid joint solution found for joints: {joints}, {joint_solutions}"
 
 
-def test_settings_and_getting_ee_rotation(known_robot):
-    robot = known_robot
+def test_settings_and_getting_ee_rotation(example_robot):
+    robot = example_robot
     robot.ee_rotation = [0, 0, 0]
     assert np.allclose(robot.ee_rotation, [0, 0, 0])
 
@@ -187,8 +188,10 @@ def test_settings_and_getting_ee_rotation(known_robot):
         ([10, 20, 30], [90, 0, -90, 0, 0, 0], [20, -10, 30]),
     ],
 )
-def test_ee_translation(known_robot, initial_translation, joint_angles, expected_diff):
-    robot = known_robot
+def test_ee_translation(
+    example_robot, initial_translation, joint_angles, expected_diff
+):
+    robot = example_robot
     robot.ee_rotation = [0, -90, 0]
     robot.ee_translation = [0, 0, 0]
     initial_translation_result, _ = robot.forward(joints=joint_angles)
@@ -204,3 +207,76 @@ def test_ee_translation(known_robot, initial_translation, joint_angles, expected
     assert np.allclose(
         translation_diff, expected_diff
     ), f"Expected translation difference {expected_diff}, but got {translation_diff}"
+
+
+def test_batch_forward_random(example_robot):
+    robot = example_robot
+
+    # Generate random joint angles within typical ranges
+    num_samples = 50
+    np.random.seed(42)
+    joint_data = {
+        "J1": np.random.uniform(-180, 180, num_samples),
+        "J2": np.random.uniform(-90, 90, num_samples),
+        "J3": np.random.uniform(-180, 180, num_samples),
+        "J4": np.random.uniform(-180, 180, num_samples),
+        "J5": np.random.uniform(-90, 90, num_samples),
+        "J6": np.random.uniform(-180, 180, num_samples),
+    }
+    joints_df = pl.DataFrame(joint_data)
+
+    # Use batch_forward to compute positions and orientations
+    result_df = robot.batch_forward(joints_df)
+
+    # Verify that the output DataFrame has the expected length
+    assert len(result_df) == num_samples, "Mismatch in number of samples"
+
+
+def test_batch_inverse_random(example_robot):
+    robot = example_robot
+
+    # Generate random positions and orientations
+    num_samples = 50
+    np.random.seed(42)
+    pose_data = {
+        "X": np.random.uniform(1500, 2500, num_samples),
+        "Y": np.random.uniform(-1000, 1000, num_samples),
+        "Z": np.random.uniform(1000, 2500, num_samples),
+        "A": np.random.uniform(-180, 180, num_samples),
+        "B": np.random.uniform(-90, 90, num_samples),
+        "C": np.random.uniform(-180, 180, num_samples),
+    }
+    poses_df = pl.DataFrame(pose_data)
+
+    # Use batch_inverse to compute joint angles
+    result_df = robot.batch_inverse(poses_df)
+
+    # Verify that the output DataFrame has the expected length
+    assert len(result_df) <= num_samples, "Mismatch in number of samples"
+
+
+def test_batch_roundtrip(example_robot):
+    robot = example_robot
+    robot.ee_rotation = [0, -90, 0]
+    robot.ee_translation = [100, 0, -500]
+
+    num_samples = 21
+    np.random.seed(42)
+    joint_data = {
+        "J1": np.linspace(-180, 100, num_samples),
+        "J2": np.linspace(-80, 90, num_samples),
+        "J3": np.linspace(-170, 180, num_samples),
+        "J4": np.linspace(-600, 0, num_samples),
+        "J5": np.linspace(-80, 90, num_samples),
+        "J6": np.linspace(600, 0, num_samples),
+    }
+    joints_df = pl.DataFrame(joint_data)
+
+    poses_df = robot.batch_forward(joints_df)
+    result_joints_df = robot.batch_inverse(
+        poses_df, current_joints=joints_df[0].to_numpy()[0]
+    )
+
+    assert np.isclose(
+        joints_df.to_numpy(), result_joints_df.to_numpy(), atol=1e-3
+    ).all()

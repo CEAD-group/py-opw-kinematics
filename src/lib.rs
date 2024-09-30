@@ -385,7 +385,15 @@ impl Robot {
         let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = match current_joints {
-            Some(joints) => self.robot.inverse_continuing(&iso_pose, &joints),
+            Some(mut joints) => {
+                if self.has_parallellogram {
+                    joints[2] += joints[1];
+                }
+                if self.euler_convention.degrees {
+                    joints.iter_mut().for_each(|x| *x = x.to_radians());
+                }
+                self.robot.inverse_continuing(&iso_pose, &joints)
+            }
             None => self.robot.inverse(&iso_pose),
         };
 
@@ -410,7 +418,6 @@ impl Robot {
         poses: PyDataFrame,
         mut current_joints: Option<[f64; 6]>,
     ) -> PyResult<PyDataFrame> {
-        // Convert PyDataFrame to a Polars DataFrame
         let df: DataFrame = poses.into();
 
         let x = extract_column_f64(&df, "X")?;
@@ -420,73 +427,131 @@ impl Robot {
         let b = extract_column_f64(&df, "B")?;
         let c = extract_column_f64(&df, "C")?;
 
-        // Prepare to store joint solutions for each pose
-        let mut pose_indices = Vec::with_capacity(df.height());
-        let mut j0 = Vec::with_capacity(df.height());
-        let mut j1 = Vec::with_capacity(df.height());
-        let mut j2 = Vec::with_capacity(df.height());
-        let mut j3 = Vec::with_capacity(df.height());
-        let mut j4 = Vec::with_capacity(df.height());
-        let mut j5 = Vec::with_capacity(df.height());
+        // Use Vec<Option<f64>> to allow for None (Null) values
+        let mut j1: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut j2: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut j3: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut j4: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut j5: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut j6: Vec<Option<f64>> = Vec::with_capacity(df.height());
 
-        // Iterate through all poses and calculate inverse kinematics using continuation
-        for i in 0..x.len() {
-            // Get elements from the ChunkedArray safely
-            let pose = (
-                [
-                    x.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in x")
-                    })?,
-                    y.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in y")
-                    })?,
-                    z.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in z")
-                    })?,
-                ],
-                [
-                    a.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in a")
-                    })?,
-                    b.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in b")
-                    })?,
-                    c.get(i).ok_or_else(|| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in c")
-                    })?,
-                ],
-            );
+        for i in 0..df.height() {
+            // Safely extract pose components, handling missing values
+            let x_i = x.get(i);
+            let y_i = y.get(i);
+            let z_i = z.get(i);
+            let a_i = a.get(i);
+            let b_i = b.get(i);
+            let c_i = c.get(i);
 
-            let solutions = self.inverse(pose, current_joints);
+            if let (Some(x), Some(y), Some(z), Some(a), Some(b), Some(c)) =
+                (x_i, y_i, z_i, a_i, b_i, c_i)
+            {
+                let pose = ([x, y, z], [a, b, c]);
 
-            // Assuming the first solution is the best continuation
-            if let Some(best_solution) = solutions.first() {
-                pose_indices.push(i as f64);
-                j0.push(best_solution[0]);
-                j1.push(best_solution[1]);
-                j2.push(best_solution[2]);
-                j3.push(best_solution[3]);
-                j4.push(best_solution[4]);
-                j5.push(best_solution[5]);
-
-                // Update current joints for the next iteration
-                current_joints = Some(*best_solution);
+                let solutions = self.inverse(pose, current_joints);
+                if let Some(best_solution) = solutions.first() {
+                    j1.push(Some(best_solution[0]));
+                    j2.push(Some(best_solution[1]));
+                    j3.push(Some(best_solution[2]));
+                    j4.push(Some(best_solution[3]));
+                    j5.push(Some(best_solution[4]));
+                    j6.push(Some(best_solution[5]));
+                    current_joints = Some(*best_solution);
+                } else {
+                    // No solution found, push None values
+                    j1.push(None);
+                    j2.push(None);
+                    j3.push(None);
+                    j4.push(None);
+                    j5.push(None);
+                    j6.push(None);
+                }
+            } else {
+                // Missing pose components, push None values
+                j1.push(None);
+                j2.push(None);
+                j3.push(None);
+                j4.push(None);
+                j5.push(None);
+                j6.push(None);
             }
         }
 
-        // Create the DataFrame from the column vectors
+        // Create Series with optional values to allow Nulls
         let df_result = DataFrame::new(vec![
-            Series::new("pose_index".into(), pose_indices),
-            Series::new("j0".into(), j0),
-            Series::new("j1".into(), j1),
-            Series::new("j2".into(), j2),
-            Series::new("j3".into(), j3),
-            Series::new("j4".into(), j4),
-            Series::new("j5".into(), j5),
+            Series::new("J1".into(), j1),
+            Series::new("J2".into(), j2),
+            Series::new("J3".into(), j3),
+            Series::new("J4".into(), j4),
+            Series::new("J5".into(), j5),
+            Series::new("J6".into(), j6),
         ])
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        Ok(PyDataFrame(df_result))
+    }
 
-        // Wrap the DataFrame into a PyDataFrame and return it to Python
+    #[pyo3(signature = (joints))]
+    fn batch_forward(&self, joints: PyDataFrame) -> PyResult<PyDataFrame> {
+        let df: DataFrame = joints.into();
+
+        let j1 = extract_column_f64(&df, "J1")?;
+        let j2 = extract_column_f64(&df, "J2")?;
+        let j3 = extract_column_f64(&df, "J3")?;
+        let j4 = extract_column_f64(&df, "J4")?;
+        let j5 = extract_column_f64(&df, "J5")?;
+        let j6 = extract_column_f64(&df, "J6")?;
+
+        // Use Vec<Option<f64>> to allow for None (Null) values
+        let mut x: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut y: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut z: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut a: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut b: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut c: Vec<Option<f64>> = Vec::with_capacity(df.height());
+
+        for i in 0..df.height() {
+            // Safely extract joint values, handling missing values
+            let j1_i = j1.get(i);
+            let j2_i = j2.get(i);
+            let j3_i = j3.get(i);
+            let j4_i = j4.get(i);
+            let j5_i = j5.get(i);
+            let j6_i = j6.get(i);
+
+            if let (Some(j1), Some(j2), Some(j3), Some(j4), Some(j5), Some(j6)) =
+                (j1_i, j2_i, j3_i, j4_i, j5_i, j6_i)
+            {
+                let mut joints_array = [j1, j2, j3, j4, j5, j6];
+                let (translation, rotation) = self.forward(joints_array);
+
+                x.push(Some(translation[0]));
+                y.push(Some(translation[1]));
+                z.push(Some(translation[2]));
+                a.push(Some(rotation[0]));
+                b.push(Some(rotation[1]));
+                c.push(Some(rotation[2]));
+            } else {
+                // Missing joint values, push None values
+                x.push(None);
+                y.push(None);
+                z.push(None);
+                a.push(None);
+                b.push(None);
+                c.push(None);
+            }
+        }
+
+        // Create Series with optional values to allow Nulls
+        let df_result = DataFrame::new(vec![
+            Series::new("X".into(), x),
+            Series::new("Y".into(), y),
+            Series::new("Z".into(), z),
+            Series::new("A".into(), a),
+            Series::new("B".into(), b),
+            Series::new("C".into(), c),
+        ])
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
         Ok(PyDataFrame(df_result))
     }
 }

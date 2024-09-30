@@ -57,5 +57,6 @@ class Robot:
     def batch_inverse(
         self, poses: pl.DataFrame, current_joints: List[float] | None = None
     ) -> pl.DataFrame: ...
+    def batch_forward(self, joints: pl.DataFrame) -> pl.DataFrame: ...
 
 __all__: List[str]
