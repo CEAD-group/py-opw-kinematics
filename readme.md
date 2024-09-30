@@ -84,7 +84,14 @@ Solution: [  10.     90.76  -20.4  -180.    -69.6   180.  ]
 
 ## Acknowledgements
 
-This project builds on the Rust library rs-opw-kinematics, which itself draws inspiration from:
+This project builds on the Rust library rs-opw-kinematics by Bourumir Wyngs, which itself draws inspiration from:
 
-    The 2014 research paper: An Analytical Solution of the Inverse Kinematics Problem of Industrial Serial Manipulators with an Ortho-parallel Basis and a Spherical Wrist, authored by Mathias Brandstötter, Arthur Angerer, and Michael Hofbaur (ResearchGate link).
-    The C++ project opw_kinematics, which provided valuable insights for validation and testing.
+- The 2014 research paper: An Analytical Solution of the Inverse Kinematics Problem of Industrial Serial Manipulators with an Ortho-parallel Basis and a Spherical Wrist, authored by Mathias Brandstötter, Arthur Angerer, and Michael Hofbaur (ResearchGate link).
+- The C++ project opw_kinematics, which provided valuable insights for validation and testing.
+
+
+## Licensing
+
+The `py-opw-kinematics` library itself is licensed under MIT.
+
+The image `opw.png`, used for documentation purposes, is sourced from [opw_kinematics](https://github.com/Jmeyer1292/opw_kinematics) and is licensed under the Apache License 2.0. 

@@ -1,0 +1,18 @@
+  test:
+    needs: [linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - name: Install py_opw_kinematics
+        run: pip install dist/*.whl
+      - name: Install dependencies
+        run: pip install pytest maturin polars 
+      - name: Run tests with pytest
+        run: pytest
