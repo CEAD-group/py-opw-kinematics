@@ -1,10 +1,14 @@
 use nalgebra::{Isometry3, Matrix3, Rotation, Rotation3, Unit, Vector3};
+use polars::frame::DataFrame;
+use polars::prelude::*;
+use polars::series::Series;
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_polars::PyDataFrame;
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
-
 #[pyclass]
 #[derive(Clone)]
 struct EulerConvention {
@@ -298,6 +302,130 @@ impl Robot {
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
 
         self.robot.inverse_continuing(&iso_pose, &current_joints)
+    }
+
+    #[pyo3(signature = (poses, current_joints=None))]
+    fn batch_inverse(
+        &self,
+        py: Python,
+        poses: PyDataFrame,
+        current_joints: Option<Vec<f64>>,
+    ) -> PyResult<PyDataFrame> {
+        // Convert PyDataFrame to a Polars DataFrame
+        let df: DataFrame = poses.into();
+
+        // Extract x, y, z, a, b, c columns from the DataFrame safely
+        let x = df
+            .column("X")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let y = df
+            .column("Y")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let z = df
+            .column("Z")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let a = df
+            .column("A")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let b = df
+            .column("B")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let c = df
+            .column("C")
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
+            .f64()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+
+        // Check if current_joints is provided, otherwise use default values
+        let mut current_joints: [f64; 6] = if let Some(joints) = current_joints {
+            if joints.len() != 6 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "current_joints must contain 6 values representing the current joint angles.",
+                ));
+            }
+            joints.try_into().expect("Invalid joint length") // Convert Vec<f64> to [f64; 6]
+        } else {
+            [0.0; 6] // Default starting joints if not provided
+        };
+
+        // Prepare to store joint solutions for each pose
+        let mut pose_indices = Vec::with_capacity(df.height());
+        let mut j0 = Vec::with_capacity(df.height());
+        let mut j1 = Vec::with_capacity(df.height());
+        let mut j2 = Vec::with_capacity(df.height());
+        let mut j3 = Vec::with_capacity(df.height());
+        let mut j4 = Vec::with_capacity(df.height());
+        let mut j5 = Vec::with_capacity(df.height());
+
+        // Iterate through all poses and calculate inverse kinematics using continuation
+        for i in 0..x.len() {
+            // Get elements from the ChunkedArray safely
+            let pose = (
+                [
+                    x.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in x")
+                    })?,
+                    y.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in y")
+                    })?,
+                    z.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in z")
+                    })?,
+                ],
+                [
+                    a.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in a")
+                    })?,
+                    b.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in b")
+                    })?,
+                    c.get(i).ok_or_else(|| {
+                        PyErr::new::<pyo3::exceptions::PyValueError, _>("Missing value in c")
+                    })?,
+                ],
+            );
+
+            let solutions = self.inverse_continuing(pose, current_joints);
+
+            // Assuming the first solution is the best continuation
+            if let Some(best_solution) = solutions.first() {
+                pose_indices.push(i as f64);
+                j0.push(best_solution[0]);
+                j1.push(best_solution[1]);
+                j2.push(best_solution[2]);
+                j3.push(best_solution[3]);
+                j4.push(best_solution[4]);
+                j5.push(best_solution[5]);
+
+                // Update current joints for the next iteration
+                current_joints = *best_solution;
+            }
+        }
+
+        // Create the DataFrame from the column vectors
+        let df_result = DataFrame::new(vec![
+            Series::new("pose_index".into(), pose_indices),
+            Series::new("j0".into(), j0),
+            Series::new("j1".into(), j1),
+            Series::new("j2".into(), j2),
+            Series::new("j3".into(), j3),
+            Series::new("j4".into(), j4),
+            Series::new("j5".into(), j5),
+        ])
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+
+        // Wrap the DataFrame into a PyDataFrame and return it to Python
+        Ok(PyDataFrame(df_result))
     }
 }
 
