@@ -36,13 +36,15 @@ class Robot:
     has_parallellogram: bool
     euler_convention: EulerConvention
     ee_rotation: Tuple[float, float, float]
+    ee_translation: Tuple[float, float, float]
     _internal_euler_convention: EulerConvention
 
     def __init__(
         self,
         kinematic_model: KinematicModel,
         euler_convention: EulerConvention,
-        ee_rotation: Tuple[float, float, float],
+        ee_rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        ee_translation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> None: ...
     def forward(
         self, joints: Tuple[float, float, float, float, float, float]

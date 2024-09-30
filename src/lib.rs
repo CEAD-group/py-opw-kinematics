@@ -1,4 +1,4 @@
-use nalgebra::{Isometry3, Matrix3, Rotation, Rotation3, Unit, Vector3};
+use nalgebra::{Isometry3, Matrix3, Rotation, Rotation3, Translation3, Unit, Vector3};
 use polars::frame::DataFrame;
 use polars::prelude::*;
 use polars::series::Series;
@@ -373,25 +373,26 @@ impl Robot {
         (translation.into(), rotation)
     }
 
-    /// Inverse kinematics: calculates the joint solutions for a given pose
     fn inverse(&self, pose: ([f64; 3], [f64; 3])) -> Vec<[f64; 6]> {
-        let translation = nalgebra::Translation3::from(pose.0);
-        let rotation =
-            self.euler_convention._to_rotation_matrix(pose.1) * self._ee_rotation_matrix.inverse();
-
+        let rotation_matrix = self.euler_convention._to_rotation_matrix(pose.1);
+        let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
+        let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
+        let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = self.robot.inverse(&iso_pose);
 
-        // Handle special case for parallelogram configuration
         if self.has_parallellogram {
             solutions.iter_mut().for_each(|x| x[2] -= x[1]);
         }
 
         if self.euler_convention.degrees {
-            solutions
-                .iter_mut()
-                .for_each(|x| *x = x.map(|angle| angle.to_degrees()));
+            solutions.iter_mut().for_each(|x| {
+                for angle in x.iter_mut() {
+                    *angle = angle.to_degrees();
+                }
+            });
         }
+
         solutions
     }
 

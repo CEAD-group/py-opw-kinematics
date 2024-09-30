@@ -57,10 +57,57 @@ def test_robot_forward_kinematics(
 
 
 @pytest.mark.parametrize(
+    "joints, expected_position, expected_orientation",
+    [
+        ([0, 0, -90, 0, 0, 0], [2308.022, 132.200, 1707.280], [0, 0, 0]),
+        (
+            [10, 20, -90, 30, 20, 10],
+            [2396.467, -743.091, 1572.479],
+            [-37.346, 25.987, -4.814],
+        ),
+    ],
+)
+def test_robot_forward_kinematics_with_ee_translation(
+    known_robot, joints, expected_position, expected_orientation
+):
+    robot = known_robot
+    robot.ee_translation = [234.096, 132.2, -551.725]
+    # Calculate forward kinematics
+    t, r = robot.forward(joints=joints)
+
+    # Assert the translation vector is close to the expected position
+    assert np.allclose(t, expected_position, atol=1e-3)
+    print("R", r)
+    if expected_orientation:
+        # Assert the rotation vector is close to the expected orientation
+        assert np.allclose(r, expected_orientation, atol=1e-3)
+
+
+def test_robot_inverse_with_ee_translation(known_robot):
+    robot = known_robot
+    robot.ee_translation = [234.096, 132.2, -551.725]
+    expected_joints = [10, 20, -90, 30, 20, 10]
+
+    joint_solutions = robot.inverse(
+        (
+            [2396.467, -743.091, 1572.479],
+            [-37.346, 25.987, -4.814],
+        )
+    )
+
+    # Ensure at least one valid solution matches the original joint angles
+    assert any(
+        np.allclose(solution, expected_joints, atol=1e-2)
+        for solution in joint_solutions
+    ), f"No valid joint solution found for joints: {expected_joints}, {joint_solutions}"
+
+
+@pytest.mark.parametrize(
     "joints", [[-10, 0, -30, 10, 10, -10], [10, 20, -90, 30, 20, 10]]
 )
 @pytest.mark.parametrize("has_parallellogram", [True, False])
 @pytest.mark.parametrize("extrinsic", [True, False])
+@pytest.mark.parametrize("ee_translation", [[0, 0, 0], [100, 200, 300]])
 @pytest.mark.parametrize("ee_rotation", [[0, 0, 0], [0, -90, 0], [30, 40, 60]])
 @pytest.mark.parametrize("degrees", [True, False])
 @pytest.mark.parametrize(
@@ -75,6 +122,7 @@ def test_robot_kinematics_roundtrip(
     joints,
     has_parallellogram,
     extrinsic,
+    ee_translation,
     ee_rotation,
     degrees,
     flip_axes,
@@ -96,7 +144,12 @@ def test_robot_kinematics_roundtrip(
 
     # Define Euler convention and create robot
     euler_convention = EulerConvention("XYZ", extrinsic=extrinsic, degrees=degrees)
-    robot = Robot(kinematic_model, euler_convention, ee_rotation=ee_rotation)
+    robot = Robot(
+        kinematic_model,
+        euler_convention,
+        ee_translation=ee_translation,
+        ee_rotation=ee_rotation,
+    )
     joints = joints if degrees else np.deg2rad(joints)
 
     # Perform forward kinematics to get the pose
