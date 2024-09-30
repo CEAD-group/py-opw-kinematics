@@ -10,7 +10,7 @@ class EulerConvention:
     def convert(
         self, other: "EulerConvention", angles: Tuple[float, float, float]
     ) -> Tuple[float, float, float]: ...
-    def from_rotation_matrix(
+    def angles_from_rotation_matrix(
         self, rot: List[List[float]]
     ) -> Tuple[float, float, float]: ...
     def to_rotation_matrix(
