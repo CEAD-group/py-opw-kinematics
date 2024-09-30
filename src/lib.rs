@@ -373,13 +373,21 @@ impl Robot {
         (translation.into(), rotation)
     }
 
-    fn inverse(&self, pose: ([f64; 3], [f64; 3])) -> Vec<[f64; 6]> {
+    #[pyo3(signature = (pose, current_joints=None))]
+    fn inverse(
+        &self,
+        pose: ([f64; 3], [f64; 3]),
+        current_joints: Option<[f64; 6]>,
+    ) -> Vec<[f64; 6]> {
         let rotation_matrix = self.euler_convention._to_rotation_matrix(pose.1);
         let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
         let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
         let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
-        let mut solutions = self.robot.inverse(&iso_pose);
+        let mut solutions = match current_joints {
+            Some(joints) => self.robot.inverse_continuing(&iso_pose, &joints),
+            None => self.robot.inverse(&iso_pose),
+        };
 
         if self.has_parallellogram {
             solutions.iter_mut().for_each(|x| x[2] -= x[1]);
@@ -396,24 +404,11 @@ impl Robot {
         solutions
     }
 
-    /// Inverse kinematics with continuation from close joints
-    fn inverse_continuing(
-        &self,
-        pose: ([f64; 3], [f64; 3]),
-        current_joints: [f64; 6],
-    ) -> Vec<[f64; 6]> {
-        let translation = nalgebra::Translation3::from(pose.0);
-        let rotation = self.euler_convention._to_rotation_matrix(pose.1);
-        let iso_pose = Isometry3::from_parts(translation, rotation.into());
-
-        self.robot.inverse_continuing(&iso_pose, &current_joints)
-    }
-
     #[pyo3(signature = (poses, current_joints=None))]
     fn batch_inverse(
         &self,
         poses: PyDataFrame,
-        current_joints: Option<Vec<f64>>,
+        mut current_joints: Option<[f64; 6]>,
     ) -> PyResult<PyDataFrame> {
         // Convert PyDataFrame to a Polars DataFrame
         let df: DataFrame = poses.into();
@@ -424,18 +419,6 @@ impl Robot {
         let a = extract_column_f64(&df, "A")?;
         let b = extract_column_f64(&df, "B")?;
         let c = extract_column_f64(&df, "C")?;
-
-        // Check if current_joints is provided, otherwise use default values
-        let mut current_joints: [f64; 6] = if let Some(joints) = current_joints {
-            if joints.len() != 6 {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "current_joints must contain 6 values representing the current joint angles.",
-                ));
-            }
-            joints.try_into().expect("Invalid joint length") // Convert Vec<f64> to [f64; 6]
-        } else {
-            [0.0; 6] // Default starting joints if not provided
-        };
 
         // Prepare to store joint solutions for each pose
         let mut pose_indices = Vec::with_capacity(df.height());
@@ -474,7 +457,7 @@ impl Robot {
                 ],
             );
 
-            let solutions = self.inverse_continuing(pose, current_joints);
+            let solutions = self.inverse(pose, current_joints);
 
             // Assuming the first solution is the best continuation
             if let Some(best_solution) = solutions.first() {
@@ -487,7 +470,7 @@ impl Robot {
                 j5.push(best_solution[5]);
 
                 // Update current joints for the next iteration
-                current_joints = *best_solution;
+                current_joints = Some(*best_solution);
             }
         }
 

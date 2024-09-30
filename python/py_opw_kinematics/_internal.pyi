@@ -50,12 +50,9 @@ class Robot:
         self, joints: Tuple[float, float, float, float, float, float]
     ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]: ...
     def inverse(
-        self, pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]]
-    ) -> List[Tuple[float, float, float, float, float, float]]: ...
-    def inverse_continuing(
         self,
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
-        current_joints: Tuple[float, float, float, float, float, float],
+        current_joints: Tuple[float, float, float, float, float, float] | None = None,
     ) -> List[Tuple[float, float, float, float, float, float]]: ...
     def batch_inverse(
         self, poses: pl.DataFrame, current_joints: List[float] | None = None
