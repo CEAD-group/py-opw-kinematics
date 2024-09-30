@@ -1,4 +1,5 @@
 from typing import List, Tuple, Literal
+import polars as pl
 
 Sign = Literal[-1, 1]
 
@@ -57,5 +58,8 @@ class Robot:
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
         current_joints: Tuple[float, float, float, float, float, float],
     ) -> List[Tuple[float, float, float, float, float, float]]: ...
+    def batch_inverse(
+        self, poses: pl.DataFrame, current_joints: List[float] | None = None
+    ) -> pl.DataFrame: ...
 
 __all__: List[str]

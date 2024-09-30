@@ -1,6 +1,4 @@
-# %%
 from py_opw_kinematics import Robot, EulerConvention, KinematicModel
-from math import pi
 import numpy as np
 import pytest
 
@@ -48,14 +46,14 @@ def test_robot_forward_kinematics(
     robot = known_robot
 
     # Calculate forward kinematics
-    t, r_rad = robot.forward(joints=joints)
+    t, r = robot.forward(joints=joints)
 
     # Assert the translation vector is close to the expected position
     assert np.allclose(t, expected_position, atol=1e-3)
-    print("R_rad", r_rad)
+    print("R", r)
     if expected_orientation:
         # Assert the rotation vector is close to the expected orientation
-        assert np.allclose(r_rad, expected_orientation, atol=1e-3)
+        assert np.allclose(r, expected_orientation, atol=1e-3)
 
 
 @pytest.mark.parametrize(

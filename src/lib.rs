@@ -314,37 +314,12 @@ impl Robot {
         // Convert PyDataFrame to a Polars DataFrame
         let df: DataFrame = poses.into();
 
-        // Extract x, y, z, a, b, c columns from the DataFrame safely
-        let x = df
-            .column("X")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        let y = df
-            .column("Y")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        let z = df
-            .column("Z")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        let a = df
-            .column("A")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        let b = df
-            .column("B")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        let c = df
-            .column("C")
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?
-            .f64()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
+        let x = extract_column_f64(&df, "X")?;
+        let y = extract_column_f64(&df, "Y")?;
+        let z = extract_column_f64(&df, "Z")?;
+        let a = extract_column_f64(&df, "A")?;
+        let b = extract_column_f64(&df, "B")?;
+        let c = extract_column_f64(&df, "C")?;
 
         // Check if current_joints is provided, otherwise use default values
         let mut current_joints: [f64; 6] = if let Some(joints) = current_joints {
@@ -436,4 +411,11 @@ fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KinematicModel>()?;
     m.add_class::<Robot>()?;
     Ok(())
+}
+
+fn extract_column_f64<'a>(df: &'a DataFrame, column_name: &str) -> PyResult<&'a Float64Chunked> {
+    df.column(column_name)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("{}", e)))?
+        .f64()
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("{}", e)))
 }
