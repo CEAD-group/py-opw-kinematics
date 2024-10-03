@@ -94,4 +94,7 @@ This project builds on the Rust library rs-opw-kinematics by Bourumir Wyngs, whi
 
 The `py-opw-kinematics` library itself is licensed under MIT.
 
-The image `opw.png`, used for documentation purposes, is sourced from [opw_kinematics](https://github.com/Jmeyer1292/opw_kinematics) and is licensed under the Apache License 2.0. 
+The image `opw.png`, used for documentation purposes, is sourced from [opw_kinematics](https://github.com/Jmeyer1292/opw_kinematics) and is licensed under the Apache License 2.0.
+
+## Contributing
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started.
