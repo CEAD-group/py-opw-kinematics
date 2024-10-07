@@ -1,12 +1,18 @@
-from typing import List, Tuple
+from typing import List, Tuple, Literal
 import polars as pl
 
+EulerSequence = Literal[
+    "XYX", "XYZ", "XZX", "XZY", "YXY", "YXZ", "YZX", "YZY", "ZXY", "ZXZ", "ZYX", "ZYZ"
+]
+
 class EulerConvention:
-    sequence: str
+    sequence: EulerSequence
     extrinsic: bool
     degrees: bool
 
-    def __init__(self, sequence: str, extrinsic: bool, degrees: bool) -> None: ...
+    def __init__(
+        self, sequence: EulerSequence, extrinsic: bool, degrees: bool
+    ) -> None: ...
     def convert(
         self, other: "EulerConvention", angles: Tuple[float, float, float]
     ) -> Tuple[float, float, float]: ...
@@ -57,5 +63,6 @@ class Robot:
     def batch_inverse(
         self, poses: pl.DataFrame, current_joints: List[float] | None = None
     ) -> pl.DataFrame: ...
+    def batch_forward(self, joints: pl.DataFrame) -> pl.DataFrame: ...
 
 __all__: List[str]
