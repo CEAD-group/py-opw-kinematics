@@ -159,6 +159,7 @@ impl KinematicModel {
                 self.offsets
             },
             sign_corrections,
+            dof: 6,
         })
     }
 }
@@ -522,7 +523,7 @@ impl Robot {
             if let (Some(j1), Some(j2), Some(j3), Some(j4), Some(j5), Some(j6)) =
                 (j1_i, j2_i, j3_i, j4_i, j5_i, j6_i)
             {
-                let mut joints_array = [j1, j2, j3, j4, j5, j6];
+                let joints_array = [j1, j2, j3, j4, j5, j6];
                 let (translation, rotation) = self.forward(joints_array);
 
                 x.push(Some(translation[0]));
