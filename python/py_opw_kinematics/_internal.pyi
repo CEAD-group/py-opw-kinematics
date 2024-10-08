@@ -34,12 +34,12 @@ class KinematicModel:
         c3: float,
         c4: float,
         flip_axes: None | Tuple[bool, bool, bool, bool, bool, bool],
-        has_parallellogram: bool,
+        has_parallelogram: bool,
     ) -> None: ...
 
 class Robot:
     # robot: "OPWKinematics"  # Assuming OPWKinematics is defined in the Rust module
-    has_parallellogram: bool
+    has_parallelogram: bool
     euler_convention: EulerConvention
     ee_rotation: Tuple[float, float, float]
     ee_translation: Tuple[float, float, float]

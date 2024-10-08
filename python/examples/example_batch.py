@@ -13,7 +13,7 @@ kinematic_model = KinematicModel(
     c4=230,
     offsets=[0] * 6,
     flip_axes=[True, False, True, True, False, True],
-    has_parallellogram=True,
+    has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=True, degrees=True)
 robot = Robot(kinematic_model, euler_convention, ee_rotation=[0, -90, 0])

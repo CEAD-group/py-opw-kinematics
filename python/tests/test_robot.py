@@ -17,7 +17,7 @@ def example_robot():
         c4=230,
         offsets=[0] * 6,
         flip_axes=[True, False, True, True, False, True],
-        has_parallellogram=True,
+        has_parallelogram=True,
     )
 
     # Define Euler convention and create robot
@@ -106,7 +106,7 @@ def test_robot_inverse_with_ee_translation(example_robot):
 @pytest.mark.parametrize(
     "joints", [[-10, 0, -30, 10, 10, -10], [10, 20, -90, 30, 20, 10]]
 )
-@pytest.mark.parametrize("has_parallellogram", [True, False])
+@pytest.mark.parametrize("has_parallelogram", [True, False])
 @pytest.mark.parametrize("extrinsic", [True, False])
 @pytest.mark.parametrize("ee_translation", [[0, 0, 0], [100, 200, 300]])
 @pytest.mark.parametrize("ee_rotation", [[0, 0, 0], [0, -90, 0], [30, 40, 60]])
@@ -121,7 +121,7 @@ def test_robot_inverse_with_ee_translation(example_robot):
 @pytest.mark.parametrize("offsets", [[0, 0, 0, 0, 0, 0], [1, 2, 3, 4, 5, 6]])
 def test_robot_kinematics_roundtrip(
     joints,
-    has_parallellogram,
+    has_parallelogram,
     extrinsic,
     ee_translation,
     ee_rotation,
@@ -140,7 +140,7 @@ def test_robot_kinematics_roundtrip(
         c4=7,
         offsets=offsets,
         flip_axes=flip_axes,
-        has_parallellogram=has_parallellogram,
+        has_parallelogram=has_parallelogram,
     )
 
     # Define Euler convention and create robot
