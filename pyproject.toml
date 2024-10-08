@@ -16,7 +16,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "maturin>=1.7.4",
-    "polars>=1.9.0"
+    "polars[pyarrow,numpy]>=1.9.0",
 ]
 
 [tool.maturin]
