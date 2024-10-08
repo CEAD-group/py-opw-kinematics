@@ -60,7 +60,7 @@ kinematic_model = KinematicModel(
     has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=[0, -90, 0])
+robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
 
 # Compute forward kinematics for a given set of joint angles
 angles = (10, 0, -90, 0, 0, 0)
