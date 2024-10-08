@@ -168,15 +168,15 @@ impl KinematicModel {
 impl KinematicModel {
     #[new]
     #[pyo3(signature = (
-        a1,
-        a2,
-        b,
-        c1,
-        c2,
-        c3,
-        c4,
-        offsets = [0.0; 6],
-        flip_axes = [false; 6],
+        a1 = 0.0, 
+        a2 = 0.0, 
+        b = 0.0, 
+        c1 = 0.0, 
+        c2 = 0.0, 
+        c3 = 0.0, 
+        c4 = 0.0, 
+        offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 
+        flip_axes = (false, false, false, false, false, false), 
         has_parallelogram = false
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -188,8 +188,8 @@ impl KinematicModel {
         c2: f64,
         c3: f64,
         c4: f64,
-        offsets: [f64; 6],
-        flip_axes: [bool; 6],
+        offsets: (f64, f64, f64, f64, f64, f64), 
+        flip_axes: (bool, bool, bool, bool, bool, bool),  
         has_parallelogram: bool,
     ) -> PyResult<Self> {
         Ok(KinematicModel {
@@ -200,8 +200,8 @@ impl KinematicModel {
             c2,
             c3,
             c4,
-            offsets,
-            flip_axes,
+            offsets: offsets.try_into().unwrap(),  
+            flip_axes: flip_axes.try_into().unwrap(),  
             has_parallelogram,
         })
     }
