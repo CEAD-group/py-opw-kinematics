@@ -11,9 +11,9 @@ kinematic_model = KinematicModel(
     c2=1177.556,
     c3=1443.593,
     c4=230,
-    offsets=[0] * 6,
-    flip_axes=[True, False, True, True, False, True],
-    has_parallellogram=True,
+    offsets=(0, 0, 0, 0, 0, 0),
+    flip_axes=(True, False, True, True, False, True),
+    has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=True, degrees=True)
 robot = Robot(kinematic_model, euler_convention, ee_rotation=[0, -90, 0])
