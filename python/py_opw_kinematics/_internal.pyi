@@ -26,20 +26,35 @@ class EulerConvention:
 class KinematicModel:
     def __init__(
         self,
-        a1: float,
-        a2: float,
-        b: float,
-        c1: float,
-        c2: float,
-        c3: float,
-        c4: float,
-        flip_axes: None | Tuple[bool, bool, bool, bool, bool, bool],
-        has_parallellogram: bool,
+        a1: float = 0,
+        a2: float = 0,
+        b: float = 0,
+        c1: float = 0,
+        c2: float = 0,
+        c3: float = 0,
+        c4: float = 0,
+        offsets: Tuple[float, float, float, float, float, float] = (
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        flip_axes: None | Tuple[bool, bool, bool, bool, bool, bool] = (
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+        ),
+        has_parallelogram: bool = False,
     ) -> None: ...
 
 class Robot:
     # robot: "OPWKinematics"  # Assuming OPWKinematics is defined in the Rust module
-    has_parallellogram: bool
+    has_parallelogram: bool
     euler_convention: EulerConvention
     ee_rotation: Tuple[float, float, float]
     ee_translation: Tuple[float, float, float]
