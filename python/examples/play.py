@@ -11,7 +11,7 @@ km = KinematicModel(
     c4=1,
     offsets=(1, 1, 1, 1, 1, 1),
     sign_corrections=(1, 1, 1, 1, 1, 1),
-    has_parallellogram=False,
+    has_parallelogram=False,
 )
 print(km)
 KinematicModel(
@@ -24,7 +24,7 @@ KinematicModel(
     c4=1,
     offsets=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     sign_corrections=[1, 1, 1, 1, 1, 1],
-    has_parallellogram=False,
+    has_parallelogram=False,
 )
 # %%
 

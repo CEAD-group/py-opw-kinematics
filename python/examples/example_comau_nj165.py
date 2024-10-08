@@ -13,7 +13,7 @@ kinematic_model = KinematicModel(
     c4=230,
     offsets=[0] * 6,
     flip_axes=[True, False, True, True, False, True],
-    has_parallellogram=True,
+    has_parallelogram=True,
 )
 
 euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
