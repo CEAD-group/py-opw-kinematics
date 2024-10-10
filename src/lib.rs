@@ -19,19 +19,31 @@ struct EulerConvention {
 }
 
 impl EulerConvention {
-    fn _angles_from_rotation_matrix_radians(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        let (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
+    fn _matrix_to_euler_radians(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
+        // if not extrinsic, then the order of the rotations is reversed
+        let mut angles: [f64; 3];
+        let _observable: bool;
+
+        if self.extrinsic {
+         (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
+        }
+        else {
+            //reverse the sequence 
+         (angles, _observable) = rot.euler_angles_ordered([self._seq[2], self._seq[1], self._seq[0]], self.extrinsic);
+         angles = [angles[2], angles[1], angles[0]];
+        }
+        angles = angles.map(|angle| -angle);
         angles
     }
-    fn _angles_from_rotation_matrix(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        let angles = self._angles_from_rotation_matrix_radians(rot);
+    fn _matrix_to_euler(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
+        let angles = self._matrix_to_euler_radians(rot);
         if self.degrees {
             angles.map(|angle| angle.to_degrees())
         } else {
             angles
         }
     }
-    fn _to_rotation_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
+    fn _euler_to_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
         let [a1, a2, a3] = angles;
         let r1 = Rotation3::from_axis_angle(&self._seq[0], a1);
         let r2 = Rotation3::from_axis_angle(&self._seq[1], a2);
@@ -42,12 +54,12 @@ impl EulerConvention {
             r1 * r2 * r3
         }
     }
-    fn _to_rotation_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
+    fn _euler_to_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
         let mut angles = angles;
         if self.degrees {
             angles = angles.map(|angle| angle.to_radians());
         }
-        self._to_rotation_matrix_radians(angles)
+        self._euler_to_matrix_radians(angles)
     }
 }
 
@@ -88,19 +100,20 @@ impl EulerConvention {
     }
 
     fn convert(&self, other: &EulerConvention, angles: [f64; 3]) -> PyResult<[f64; 3]> {
-        let rot_matrix = self._to_rotation_matrix(angles);
-        let result = other._angles_from_rotation_matrix(rot_matrix);
-
+        let rot_matrix = self._euler_to_matrix(angles);
+        let mut result = other._matrix_to_euler(rot_matrix);
+        // flip sign of result
+        result = result.map(|angle| -angle);
         Ok(result)
     }
 
-    fn angles_from_rotation_matrix(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
+    fn matrix_to_euler(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
         let rotation = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
-        self._angles_from_rotation_matrix(rotation)
+        self._matrix_to_euler(rotation)
     }
 
-    fn to_rotation_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
-        let matrix = self._to_rotation_matrix(angles).into_inner();
+    fn euler_to_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
+        let matrix = self._euler_to_matrix(angles).into_inner();
         [
             [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)]],
             [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)]],
@@ -337,13 +350,13 @@ impl Robot {
     fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
         let euler_angles = self
             .euler_convention
-            ._angles_from_rotation_matrix(self._ee_rotation_matrix);
+            ._matrix_to_euler(self._ee_rotation_matrix);
         Ok(euler_angles)
     }
 
     #[setter]
     fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
-        self._ee_rotation_matrix = self.euler_convention._to_rotation_matrix(ee_rotation);
+        self._ee_rotation_matrix = self.euler_convention._euler_to_matrix(ee_rotation);
         Ok(())
     }
 
@@ -369,7 +382,7 @@ impl Robot {
         let translation = pose.translation.vector + combined_rotation * self.ee_translation;
         let rotation = self
             .euler_convention
-            ._angles_from_rotation_matrix(combined_rotation);
+            ._matrix_to_euler(combined_rotation);
 
         (translation.into(), rotation)
     }
@@ -380,7 +393,7 @@ impl Robot {
         pose: ([f64; 3], [f64; 3]),
         current_joints: Option<[f64; 6]>,
     ) -> Vec<[f64; 6]> {
-        let rotation_matrix = self.euler_convention._to_rotation_matrix(pose.1);
+        let rotation_matrix = self.euler_convention._euler_to_matrix(pose.1);
         let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
         let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
         let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
