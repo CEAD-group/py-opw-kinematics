@@ -213,6 +213,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -238,6 +241,9 @@ jobs:
       attestations: write
     steps:
       - uses: actions/download-artifact@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1
         with:
