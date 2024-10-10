@@ -54,7 +54,7 @@ def test_robot_forward_kinematics(
     print("R", r)
     if expected_orientation:
         # Assert the rotation vector is close to the expected orientation
-        assert np.allclose(r, expected_orientation, atol=1e-3)
+        assert r == pytest.approx(expected_orientation, abs=1e-3)
 
 
 @pytest.mark.parametrize(
@@ -163,6 +163,16 @@ def test_robot_kinematics_roundtrip(
     assert any(
         np.allclose(solution, joints, atol=1e-3) for solution in joint_solutions
     ), f"No valid joint solution found for joints: {joints}, {joint_solutions}"
+
+    # Ensure all forward kinematics from the computed joint angles match the original pose
+    for joint_solution in joint_solutions:
+        position_solution, orientation_solution = robot.forward(joints=joint_solution)
+        assert np.allclose(
+            position, position_solution, atol=1e-3
+        ), f"Position mismatch: {position} != {position_solution}"
+        assert np.allclose(
+            orientation, orientation_solution, atol=1e-3
+        ), f"Orientation mismatch: {orientation} != {orientation_solution}"
 
 
 def test_settings_and_getting_ee_rotation(example_robot):

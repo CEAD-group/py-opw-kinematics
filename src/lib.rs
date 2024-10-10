@@ -1,270 +1,19 @@
-use nalgebra::{Isometry3, Matrix3, Rotation, Rotation3, Translation3, Unit, Vector3};
+mod euler; // Add this line to import the new module
+mod kinematic_model; // Add this line to import the new module
+use crate::euler::EulerConvention;
+use crate::kinematic_model::KinematicModel;
+
+use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+
 use polars::frame::DataFrame;
 use polars::prelude::*;
 use polars::series::Series;
 
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
-use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
-#[pyclass]
-#[derive(Clone)]
-struct EulerConvention {
-    sequence: String,
-    extrinsic: bool,
-    degrees: bool,
-    _seq: [Unit<Vector3<f64>>; 3],
-}
-
-impl EulerConvention {
-    fn _angles_from_rotation_matrix_radians(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        let (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
-        angles
-    }
-    fn _angles_from_rotation_matrix(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        let angles = self._angles_from_rotation_matrix_radians(rot);
-        if self.degrees {
-            angles.map(|angle| angle.to_degrees())
-        } else {
-            angles
-        }
-    }
-    fn _to_rotation_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
-        let [a1, a2, a3] = angles;
-        let r1 = Rotation3::from_axis_angle(&self._seq[0], a1);
-        let r2 = Rotation3::from_axis_angle(&self._seq[1], a2);
-        let r3 = Rotation3::from_axis_angle(&self._seq[2], a3);
-        if self.extrinsic {
-            r3 * r2 * r1
-        } else {
-            r1 * r2 * r3
-        }
-    }
-    fn _to_rotation_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
-        let mut angles = angles;
-        if self.degrees {
-            angles = angles.map(|angle| angle.to_radians());
-        }
-        self._to_rotation_matrix_radians(angles)
-    }
-}
-
-#[pymethods]
-impl EulerConvention {
-    #[new]
-    fn new(sequence: String, extrinsic: bool, degrees: bool) -> PyResult<Self> {
-        if sequence.len() != 3 {
-            return Err(PyErr::new::<PyValueError, _>(format!(
-                "Expected a 3-character sequence, but got {} characters",
-                sequence.len()
-            )));
-        }
-
-        let _seq: [Unit<Vector3<f64>>; 3] = sequence
-            .chars()
-            .map(|c| match c {
-                'X' => Ok(Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0))),
-                'Y' => Ok(Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0))),
-                'Z' => Ok(Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0))),
-                _ => Err(PyErr::new::<PyValueError, _>(format!(
-                    "Invalid character '{}'. Expected only 'X', 'Y', or 'Z'.",
-                    c
-                ))),
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .try_into()
-            .map_err(|_| {
-                PyErr::new::<PyValueError, _>("Invalid sequence. Must be exactly 3 characters.")
-            })?;
-
-        Ok(EulerConvention {
-            sequence,
-            extrinsic,
-            degrees,
-            _seq,
-        })
-    }
-
-    fn convert(&self, other: &EulerConvention, angles: [f64; 3]) -> PyResult<[f64; 3]> {
-        let rot_matrix = self._to_rotation_matrix(angles);
-        let result = other._angles_from_rotation_matrix(rot_matrix);
-
-        Ok(result)
-    }
-
-    fn angles_from_rotation_matrix(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
-        let rotation = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
-        self._angles_from_rotation_matrix(rotation)
-    }
-
-    fn to_rotation_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
-        let matrix = self._to_rotation_matrix(angles).into_inner();
-        [
-            [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)]],
-            [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)]],
-            [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)]],
-        ]
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "EulerConvention(sequence='{}', extrinsic={}, degrees={})",
-            self.sequence,
-            if self.extrinsic { "True" } else { "False" },
-            if self.degrees { "True" } else { "False" }
-        )
-    }
-
-    fn __str__(&self) -> String {
-        self.__repr__()
-    }
-}
-
-#[pyclass(frozen)] // Declare the class as frozen to provide immutability.
-#[derive(Clone)]
-struct KinematicModel {
-    a1: f64,
-    a2: f64,
-    b: f64,
-    c1: f64,
-    c2: f64,
-    c3: f64,
-    c4: f64,
-    offsets: [f64; 6],
-    flip_axes: [bool; 6], // Renamed and changed to boolean array
-    has_parallelogram: bool,
-}
-
-impl KinematicModel {
-    fn to_opw_kinematics(&self, degrees: bool) -> OPWKinematics {
-        let sign_corrections = self.flip_axes.map(|x| if x { -1 } else { 1 });
-        OPWKinematics::new(Parameters {
-            a1: self.a1,
-            a2: self.a2,
-            b: self.b,
-            c1: self.c1,
-            c2: self.c2,
-            c3: self.c3,
-            c4: self.c4,
-            offsets: if degrees {
-                self.offsets
-                    .iter()
-                    .map(|&x| x.to_radians())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap()
-            } else {
-                self.offsets
-            },
-            sign_corrections,
-            dof: 6,
-        })
-    }
-}
-
-#[pymethods]
-impl KinematicModel {
-    #[new]
-    #[pyo3(signature = (
-        a1 = 0.0, 
-        a2 = 0.0, 
-        b = 0.0, 
-        c1 = 0.0, 
-        c2 = 0.0, 
-        c3 = 0.0, 
-        c4 = 0.0, 
-        offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), 
-        flip_axes = (false, false, false, false, false, false), 
-        has_parallelogram = false
-    ))]
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        a1: f64,
-        a2: f64,
-        b: f64,
-        c1: f64,
-        c2: f64,
-        c3: f64,
-        c4: f64,
-        offsets: (f64, f64, f64, f64, f64, f64), 
-        flip_axes: (bool, bool, bool, bool, bool, bool),  
-        has_parallelogram: bool,
-    ) -> PyResult<Self> {
-        Ok(KinematicModel {
-            a1,
-            a2,
-            b,
-            c1,
-            c2,
-            c3,
-            c4,
-            offsets: offsets.try_into().unwrap(),  
-            flip_axes: flip_axes.try_into().unwrap(),  
-            has_parallelogram,
-        })
-    }
-
-    // Getter methods to provide access to attributes since the class is frozen.
-    #[getter]
-    fn a1(&self) -> f64 {
-        self.a1
-    }
-
-    #[getter]
-    fn a2(&self) -> f64 {
-        self.a2
-    }
-
-    #[getter]
-    fn b(&self) -> f64 {
-        self.b
-    }
-
-    #[getter]
-    fn c1(&self) -> f64 {
-        self.c1
-    }
-
-    #[getter]
-    fn c2(&self) -> f64 {
-        self.c2
-    }
-
-    #[getter]
-    fn c3(&self) -> f64 {
-        self.c3
-    }
-
-    #[getter]
-    fn c4(&self) -> f64 {
-        self.c4
-    }
-
-    #[getter]
-    fn offsets(&self) -> Vec<f64> {
-        self.offsets.to_vec() // Convert the array to a Vec for easier handling in Python.
-    }
-
-    #[getter]
-    fn flip_axes(&self) -> Vec<bool> {
-        self.flip_axes.to_vec() // Convert the array to a Vec for easier handling in Python.
-    }
-
-    #[getter]
-    fn has_parallelogram(&self) -> bool {
-        self.has_parallelogram
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n    has_parallelogram={}\n)",
-            self.a1, self.a2, self.b, self.c1, self.c2, self.c3, self.c4,
-            self.offsets, self.flip_axes, self.has_parallelogram
-        )
-    }
-}
 
 #[pyclass]
 struct Robot {
@@ -337,13 +86,13 @@ impl Robot {
     fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
         let euler_angles = self
             .euler_convention
-            ._angles_from_rotation_matrix(self._ee_rotation_matrix);
+            ._matrix_to_euler(self._ee_rotation_matrix);
         Ok(euler_angles)
     }
 
     #[setter]
     fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
-        self._ee_rotation_matrix = self.euler_convention._to_rotation_matrix(ee_rotation);
+        self._ee_rotation_matrix = self.euler_convention._euler_to_matrix(ee_rotation);
         Ok(())
     }
 
@@ -367,9 +116,7 @@ impl Robot {
         let pose: Pose = self.robot.forward(&joints);
         let combined_rotation = pose.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
         let translation = pose.translation.vector + combined_rotation * self.ee_translation;
-        let rotation = self
-            .euler_convention
-            ._angles_from_rotation_matrix(combined_rotation);
+        let rotation = self.euler_convention._matrix_to_euler(combined_rotation);
 
         (translation.into(), rotation)
     }
@@ -380,7 +127,7 @@ impl Robot {
         pose: ([f64; 3], [f64; 3]),
         current_joints: Option<[f64; 6]>,
     ) -> Vec<[f64; 6]> {
-        let rotation_matrix = self.euler_convention._to_rotation_matrix(pose.1);
+        let rotation_matrix = self.euler_convention._euler_to_matrix(pose.1);
         let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
         let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
         let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
