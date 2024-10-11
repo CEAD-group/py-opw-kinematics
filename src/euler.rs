@@ -99,7 +99,7 @@ impl EulerConvention {
         // Create a UnitQuaternion from the inverse of the rotation matrix
         // The inverse of the rotation matrix ensures proper quaternion conversion
         // This is similar to the logic in SciPy's `Rotation` class.
-        let q = UnitQuaternion::from_rotation_matrix(&rotmat.inverse());
+        let q = UnitQuaternion::from_rotation_matrix(&rotmat);
 
         // Ensure quaternion's w-component is non-negative
         // This is done to avoid discontinuities in representation, similar to SciPy's approach
