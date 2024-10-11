@@ -54,7 +54,7 @@ def test_robot_forward_kinematics(
     print("R", r)
     if expected_orientation:
         # Assert the rotation vector is close to the expected orientation
-        assert np.allclose(r, expected_orientation, atol=1e-3)
+        assert r == pytest.approx(expected_orientation, abs=1e-3)
 
 
 @pytest.mark.parametrize(
