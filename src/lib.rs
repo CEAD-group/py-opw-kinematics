@@ -96,7 +96,7 @@ impl EulerConvention {
     }
 
     fn _matrix_to_quaternion(&self, matrix: &Matrix3<f64>) -> UnitQuaternion<f64> {
-        UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(*matrix))
+        UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(*matrix).inverse())
     }
 
     fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
@@ -215,6 +215,15 @@ impl EulerConvention {
             [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)]],
             [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)]],
         ]
+    }
+    fn matrix_to_quaternion(&self, rot: [[f64; 3]; 3]) -> [f64; 4] {
+        let rotation = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
+        let quaternion = self._matrix_to_quaternion(rotation.matrix());
+        if quaternion.w < 0.0 {
+            [-quaternion.w, -quaternion.i, -quaternion.j, -quaternion.k]
+        } else {
+            [quaternion.w, quaternion.i, quaternion.j, quaternion.k]
+        }
     }
 
     fn quaternion_to_euler(&self, quat: [f64; 4]) -> [f64; 3] {
