@@ -110,13 +110,13 @@ impl EulerConvention {
 
         rotation_matrix
     }
-    fn _matrix_to_euler(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        let angles = self._matrix_to_euler_radians(rot);
+
+    fn _euler_to_matrix(&self, angles: [f64; 3]) -> Matrix3<f64> {
+        let mut angles = angles;
         if self.degrees {
-            angles.map(|angle| angle.to_degrees())
-        } else {
-            angles
+            angles = angles.map(|angle| angle.to_radians());
         }
+        self._euler_to_matrix_radians(angles)
     }
     fn _euler_to_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
         let [a1, a2, a3] = angles;
