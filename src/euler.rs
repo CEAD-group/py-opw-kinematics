@@ -183,9 +183,7 @@ impl EulerConvention {
             }
         }
 
-        // Print warning for gimbal lock detection
-        if case != 0 {
-            println!("Gimbal lock detected. Setting third angle to zero since it is not possible to uniquely determine all angles.");
+        if case != 0 { //Gimbal lock detected, perhaps we should return a warning
         }
 
         angles
