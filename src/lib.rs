@@ -1,14 +1,6 @@
-use nalgebra::{Isometry3, Matrix3, Rotation, Rotation3, Translation3, Unit, Vector3};
-use polars::frame::DataFrame;
-use polars::prelude::*;
-use polars::series::Series;
-
+use nalgebra::{Matrix3, Quaternion, Rotation, Rotation3, Vector3, Unit};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3_polars::PyDataFrame;
-use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
-use rs_opw_kinematics::kinematics_impl::OPWKinematics;
-use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 use std::f64::consts::PI;
 
 #[pyclass]
@@ -17,15 +9,10 @@ struct EulerConvention {
     sequence: String,
     extrinsic: bool,
     degrees: bool,
-    _seq: [Unit<Vector3<f64>>; 3],
     _seq: [char; 3],
 }
 
 impl EulerConvention {
-    fn _matrix_to_euler_radians(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
-        // if not extrinsic, then the order of the rotations is reversed
-        let mut angles: [f64; 3];
-        let _observable: bool;
     fn _euler_to_matrix_radians(&self, angles: [f64; 3]) -> Matrix3<f64> {
         // If extrinsic, reverse both sequence and angles
         let (seq, angles) = if self.extrinsic {
@@ -118,23 +105,67 @@ impl EulerConvention {
         }
         self._euler_to_matrix_radians(angles)
     }
-    fn _euler_to_matrix_radians(&self, angles: [f64; 3]) -> Rotation3<f64> {
-        let [a1, a2, a3] = angles;
-        let r1 = Rotation3::from_axis_angle(&self._seq[0], a1);
-        let r2 = Rotation3::from_axis_angle(&self._seq[1], a2);
-        let r3 = Rotation3::from_axis_angle(&self._seq[2], a3);
-        if self.extrinsic {
-            r3 * r2 * r1
-        } else {
-            r1 * r2 * r3
-        }
+    
+
+    fn _matrix_to_quaternion(&self, matrix: &Matrix3<f64>) -> Quaternion<f64> {
+        // Convert a rotation matrix to a quaternion using nalgebra
+        Quaternion::from(Rotation3::from_matrix_unchecked(*matrix))
     }
-    fn _euler_to_matrix(&self, angles: [f64; 3]) -> Rotation3<f64> {
-        let mut angles = angles;
+
+    fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
+        // Convert a quaternion to Euler angles based on the specified sequence
+        let (w, x, y, z) = (quat.w, quat.i, quat.j, quat.k);
+        let (a, b, c) = match (self.sequence.as_str(), self.extrinsic) {
+            ("XYZ", true) | ("ZYX", false) => {
+                // Extrinsic XYZ or intrinsic ZYX
+                let beta = (2.0 * (w * y - z * x)).asin();
+                if beta.abs() < (PI / 2.0 - 1e-6) {
+                    (
+                        (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y)),
+                        beta,
+                        (2.0 * (w * z + x * y)).atan2(1.0 - 2.0 * (y * y + z * z)),
+                    )
+                } else {
+                    (
+                        0.0,
+                        beta,
+                        (2.0 * (x * z - w * y)).atan2(1.0 - 2.0 * (x * x + z * z)),
+                    )
+                }
+            }
+            ("XYZ", false) | ("ZYX", true) => {
+                // Intrinsic XYZ or extrinsic ZYX
+                let beta = (-2.0 * (x * z - w * y)).asin();
+                if beta.abs() < (PI / 2.0 - 1e-6) {
+                    (
+                        (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y)),
+                        beta,
+                        (2.0 * (w * z - x * y)).atan2(1.0 - 2.0 * (y * y + z * z)),
+                    )
+                } else {
+                    (
+                        (2.0 * (x * y + w * z)).atan2(1.0 - 2.0 * (y * y + z * z)),
+                        beta,
+                        0.0,
+                    )
+                }
+            }
+            _ => panic!("Unsupported sequence"),
+        };
+        [a, b, c]
+    }
+
+    fn _matrix_to_euler_radians(&self, rot: &Matrix3<f64>) -> [f64; 3] {
+        let quat = self._matrix_to_quaternion(rot);
+        self._quaternion_to_euler(&quat)
+    }
+
+    fn _matrix_to_euler(&self, rot: &Matrix3<f64>) -> [f64; 3] {
+        let mut result = self._matrix_to_euler_radians(rot);
         if self.degrees {
-            angles = angles.map(|angle| angle.to_radians());
+            result = result.map(|angle| angle.to_degrees());
         }
-        self._euler_to_matrix_radians(angles)
+        result
     }
 }
 
@@ -176,9 +207,7 @@ impl EulerConvention {
 
     fn convert(&self, other: &EulerConvention, angles: [f64; 3]) -> PyResult<[f64; 3]> {
         let rot_matrix = self._euler_to_matrix(angles);
-        let mut result = other._matrix_to_euler(rot_matrix);
-        // flip sign of result
-        result = result.map(|angle| -angle);
+        let result = other._matrix_to_euler(&rot_matrix);
         Ok(result)
     }
 
@@ -188,12 +217,21 @@ impl EulerConvention {
     }
 
     fn euler_to_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
-        let matrix = self._euler_to_matrix(angles).into_inner();
+        let matrix = self._euler_to_matrix(angles);
         [
             [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)]],
             [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)]],
             [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)]],
         ]
+    }
+
+    fn quaternion_to_euler(&self, quat: [f64; 4]) -> [f64; 3] {
+        let quaternion = Quaternion::new(quat[0], quat[1], quat[2], quat[3]);
+        let mut result = self._quaternion_to_euler(&quaternion);
+        if self.degrees {
+            result = result.map(|angle| angle.to_degrees());
+        }
+        result
     }
 
     fn __repr__(&self) -> String {
