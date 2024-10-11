@@ -84,7 +84,7 @@ def test_matrix_to_quaternion(extrinsic, seq, angles, degrees):
     scipy_quaternion = rotation.as_quat()
 
     # Verify that the quaternions are approximately equal
-    assert np.allclose(custom_quaternion, scipy_quaternion, atol=1e-5)
+    assert custom_quaternion == pytest.approx(scipy_quaternion)
 
 
 def test_matrix_to_euler(seq, angles, extrinsic, degrees):
