@@ -1,4 +1,4 @@
-use nalgebra::{Matrix3, Quaternion, Rotation, Rotation3, Vector3, Unit};
+use nalgebra::{Matrix3, Quaternion, Rotation3, Unit, UnitQuaternion, Vector3};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::f64::consts::PI;
@@ -9,7 +9,7 @@ struct EulerConvention {
     sequence: String,
     extrinsic: bool,
     degrees: bool,
-    _seq: [char; 3],
+    _seq: [Unit<Vector3<f64>>; 3],
 }
 
 impl EulerConvention {
@@ -23,17 +23,6 @@ impl EulerConvention {
         } else {
             (self.sequence.clone(), angles)
         };
-
-        if self.extrinsic {
-         (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
-        }
-        else {
-            //reverse the sequence 
-         (angles, _observable) = rot.euler_angles_ordered([self._seq[2], self._seq[1], self._seq[0]], self.extrinsic);
-         angles = [angles[2], angles[1], angles[0]];
-        }
-        angles = angles.map(|angle| -angle);
-        angles
         // Define the individual axis rotations
         let rot_x = |angle: f64| {
             Matrix3::new(
@@ -105,11 +94,9 @@ impl EulerConvention {
         }
         self._euler_to_matrix_radians(angles)
     }
-    
 
-    fn _matrix_to_quaternion(&self, matrix: &Matrix3<f64>) -> Quaternion<f64> {
-        // Convert a rotation matrix to a quaternion using nalgebra
-        Quaternion::from(Rotation3::from_matrix_unchecked(*matrix))
+    fn _matrix_to_quaternion(&self, matrix: &Matrix3<f64>) -> UnitQuaternion<f64> {
+        UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(*matrix))
     }
 
     fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
@@ -164,6 +151,11 @@ impl EulerConvention {
         let mut result = self._matrix_to_euler_radians(rot);
         if self.degrees {
             result = result.map(|angle| angle.to_degrees());
+            result = [
+                result[0].to_degrees(),
+                result[1].to_degrees(),
+                result[2].to_degrees(),
+            ];
         }
         result
     }
@@ -183,9 +175,9 @@ impl EulerConvention {
         let _seq: [Unit<Vector3<f64>>; 3] = sequence
             .chars()
             .map(|c| match c {
-                'X' => Ok(Unit::new_normalize(Vector3::new(1.0, 0.0, 0.0))),
-                'Y' => Ok(Unit::new_normalize(Vector3::new(0.0, 1.0, 0.0))),
-                'Z' => Ok(Unit::new_normalize(Vector3::new(0.0, 0.0, 1.0))),
+                'X' => Ok(Unit::new_normalize(Vector3::x_axis().into_inner())),
+                'Y' => Ok(Unit::new_normalize(Vector3::y_axis().into_inner())),
+                'Z' => Ok(Unit::new_normalize(Vector3::z_axis().into_inner())),
                 _ => Err(PyErr::new::<PyValueError, _>(format!(
                     "Invalid character '{}'. Expected only 'X', 'Y', or 'Z'.",
                     c
@@ -213,7 +205,7 @@ impl EulerConvention {
 
     fn matrix_to_euler(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
         let rotation = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
-        self._matrix_to_euler(rotation)
+        self._matrix_to_euler(rotation.matrix())
     }
 
     fn euler_to_matrix(&self, angles: [f64; 3]) -> [[f64; 3]; 3] {
@@ -226,7 +218,8 @@ impl EulerConvention {
     }
 
     fn quaternion_to_euler(&self, quat: [f64; 4]) -> [f64; 3] {
-        let quaternion = Quaternion::new(quat[0], quat[1], quat[2], quat[3]);
+        let quaternion =
+            UnitQuaternion::from_quaternion(Quaternion::new(quat[0], quat[1], quat[2], quat[3]));
         let mut result = self._quaternion_to_euler(&quaternion);
         if self.degrees {
             result = result.map(|angle| angle.to_degrees());
@@ -237,9 +230,7 @@ impl EulerConvention {
     fn __repr__(&self) -> String {
         format!(
             "EulerConvention(sequence='{}', extrinsic={}, degrees={})",
-            self.sequence,
-            if self.extrinsic { "True" } else { "False" },
-            if self.degrees { "True" } else { "False" }
+            self.sequence, self.extrinsic, self.degrees
         )
     }
 
