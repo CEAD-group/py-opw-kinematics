@@ -97,10 +97,14 @@ impl EulerConvention {
 
     fn _matrix_to_quaternion(&self, matrix: &Matrix3<f64>) -> UnitQuaternion<f64> {
         // Create a UnitQuaternion from the inverse of the rotation matrix
+        // The inverse of the rotation matrix ensures proper quaternion conversion
+        // This is similar to the logic in SciPy's `Rotation` class.
         let q = UnitQuaternion::from_rotation_matrix(
             &Rotation3::from_matrix_unchecked(*matrix).inverse(),
         );
 
+        // Ensure quaternion's w-component is non-negative
+        // This is done to avoid discontinuities in representation, similar to SciPy's approach
         if q.w < 0.0 {
             UnitQuaternion::from_quaternion(Quaternion::new(-q.w, -q.i, -q.j, -q.k))
         } else {
@@ -108,47 +112,148 @@ impl EulerConvention {
         }
     }
 
-    fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
-        // Convert a quaternion to Euler angles based on the specified sequence
-        let (w, x, y, z) = (quat.w, quat.i, quat.j, quat.k);
-        let (a, b, c) = match (self.sequence.as_str(), self.extrinsic) {
-            ("XYZ", true) | ("ZYX", false) => {
-                // Extrinsic XYZ or intrinsic ZYX
-                let beta = (2.0 * (w * y - z * x)).asin();
-                if beta.abs() < (PI / 2.0 - 1e-6) {
-                    (
-                        (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y)),
-                        beta,
-                        (2.0 * (w * z + x * y)).atan2(1.0 - 2.0 * (y * y + z * z)),
-                    )
-                } else {
-                    (
-                        0.0,
-                        beta,
-                        (2.0 * (x * z - w * y)).atan2(1.0 - 2.0 * (x * x + z * z)),
-                    )
-                }
-            }
-            ("XYZ", false) | ("ZYX", true) => {
-                // Intrinsic XYZ or extrinsic ZYX
-                let beta = (-2.0 * (x * z - w * y)).asin();
-                if beta.abs() < (PI / 2.0 - 1e-6) {
-                    (
-                        (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y)),
-                        beta,
-                        (2.0 * (w * z - x * y)).atan2(1.0 - 2.0 * (y * y + z * z)),
-                    )
-                } else {
-                    (
-                        (2.0 * (x * y + w * z)).atan2(1.0 - 2.0 * (y * y + z * z)),
-                        beta,
-                        0.0,
-                    )
-                }
-            }
-            _ => panic!("Unsupported sequence"),
+    fn _elementary_basis_index(&self, axis: char) -> usize {
+        // Maps axis labels ('X', 'Y', 'Z') to corresponding indices (0, 1, 2)
+        match axis {
+            'X' => 0,
+            'Y' => 1,
+            'Z' => 2,
+            _ => panic!("Invalid axis: {}", axis), // Panic if an invalid axis is provided
+        }
+    }
+
+    fn _get_angles(
+        &self,
+        extrinsic: bool,
+        symmetric: bool,
+        sign: f64,
+        lamb: f64,
+        a: f64,
+        b: f64,
+        c: f64,
+        d: f64,
+    ) -> [f64; 3] {
+        let eps = 1e-7; // Small threshold for floating-point comparison to detect singularities
+        let pi = PI;
+
+        // Determine the indices for the first and third angles based on extrinsic or intrinsic rotation
+        let (angle_first, angle_third) = if extrinsic { (0, 2) } else { (2, 0) };
+
+        let mut angles = [0.0; 3];
+
+        // Step 2: Compute the second angle
+        // Similar to Python's atan2(hypot, hypot) to compute an intermediate value for rotation angles
+        angles[1] = 2.0 * (c.hypot(d)).atan2(a.hypot(b));
+
+        // Check for singularities where angles[1] = 0 or π (gimbal lock conditions)
+        let case = if (angles[1]).abs() <= eps {
+            1 // angles[1] ≈ 0
+        } else if (angles[1] - pi).abs() <= eps {
+            2 // angles[1] ≈ π
+        } else {
+            0 // Regular case
         };
-        [a, b, c]
+
+        // Step 3: Compute the first and third angles
+        let half_sum = b.atan2(a);
+        let half_diff = d.atan2(c);
+
+        if case == 0 {
+            // Regular case where no gimbal lock occurs
+            angles[angle_first] = half_sum - half_diff;
+            angles[angle_third] = half_sum + half_diff;
+        } else {
+            // Singular cases (gimbal lock detected)
+            if case == 1 {
+                angles[angle_first] = 2.0 * half_sum;
+            } else {
+                angles[angle_first] = 2.0 * half_diff * if extrinsic { -1.0 } else { 1.0 };
+            }
+            angles[angle_third] = 0.0; // Set third angle to zero, as it cannot be uniquely determined
+        }
+
+        // Adjust for asymmetric sequences
+        if !symmetric {
+            angles[angle_third] *= sign;
+            angles[1] -= lamb;
+        }
+
+        // Normalize angles to the range [-π, π]
+        for angle in angles.iter_mut() {
+            if *angle < -pi {
+                *angle += 2.0 * pi;
+            } else if *angle > pi {
+                *angle -= 2.0 * pi;
+            }
+        }
+
+        // Print warning for gimbal lock detection, similar to Python's `warnings.warn`
+        if case != 0 {
+            println!("Gimbal lock detected. Setting third angle to zero since it is not possible to uniquely determine all angles.");
+        }
+
+        angles
+    }
+
+    fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
+        // Reverse sequence if intrinsic rotation is required
+        // Matches SciPy's behavior to reverse axis sequence for intrinsic rotations
+        let mut seq: Vec<char> = self.sequence.chars().collect();
+        if !self.extrinsic {
+            seq.reverse();
+        }
+
+        // Map axis labels to indices
+        let i = self._elementary_basis_index(seq[0]);
+        let j = self._elementary_basis_index(seq[1]);
+        let mut k = self._elementary_basis_index(seq[2]);
+
+        let symmetric = i == k;
+        if symmetric {
+            k = 3 - i - j; // Calculate third axis for symmetric sequences (X, Y, Z cycles)
+        }
+
+        // Determine the sign based on the permutation parity of the axis sequence
+        let perm = vec![i, j, k];
+        let even_permutation =
+            perm == vec![0, 1, 2] || perm == vec![1, 2, 0] || perm == vec![2, 0, 1];
+        let sign = if even_permutation { 1.0 } else { -1.0 };
+
+        // Ensure quaternion has a positive w-component to avoid discontinuities
+        let mut q = *quat;
+        if q.w < 0.0 {
+            q = Quaternion::new(-q.w, -q.i, -q.j, -q.k);
+        }
+
+        // Permute quaternion elements based on the rotation sequence
+        let a;
+        let b;
+        let c;
+        let d;
+
+        // Permute quaternion elements based on the rotation sequence. This are the indices of the quaternion elements
+        //      q[0] == q.i
+        //      q[1] == q.j
+        //      q[2] == q.k
+        //      q[3] == q.w
+
+        // Adjust quaternion elements for asymmetric sequences
+        if symmetric {
+            a = q[3];
+            b = q[i];
+            c = q[j];
+            d = q[k] * sign;
+        } else {
+            // Python-like adjustments for asymmetric sequences
+            // These adjustments are inspired by the original SciPy source to handle all cases properly
+            a = q[3] - q[j];
+            b = q[i] + q[k] * sign;
+            c = q[j] + q[3];
+            d = q[k] * sign - q[i];
+        }
+
+        // Compute Euler angles using helper function
+        self._get_angles(self.extrinsic, symmetric, sign, PI / 2.0, a, b, c, d)
     }
 
     fn _matrix_to_euler_radians(&self, rot: &Matrix3<f64>) -> [f64; 3] {

@@ -101,4 +101,4 @@ def test_matrix_to_euler(extrinsic, seq, angles, degrees):
         seq.upper(), degrees=degrees
     )
 
-    assert expected == pytest.approx(res)
+    assert res == pytest.approx(expected)
