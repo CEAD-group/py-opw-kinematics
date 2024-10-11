@@ -82,17 +82,9 @@ def test_matrix_to_quaternion(extrinsic, seq, angles, degrees):
 
     # Convert rotation matrix to quaternion using scipy for verification
     scipy_quaternion = rotation.as_quat()
-    scipy_quaternion2 = np.array(
-        [
-            scipy_quaternion[3],
-            scipy_quaternion[0],
-            scipy_quaternion[1],
-            scipy_quaternion[2],
-        ]
-    )  # Convert to [w, x, y, z] format
 
     # Verify that the quaternions are approximately equal
-    assert np.allclose(custom_quaternion, scipy_quaternion2, atol=1e-5)
+    assert np.allclose(custom_quaternion, scipy_quaternion, atol=1e-5)
 
 
 def test_matrix_to_euler(extrinsic, seq, angles, degrees):
