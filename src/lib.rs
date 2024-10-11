@@ -9,6 +9,8 @@ use pyo3_polars::PyDataFrame;
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
+use std::f64::consts::PI;
+
 #[pyclass]
 #[derive(Clone)]
 struct EulerConvention {
@@ -16,6 +18,7 @@ struct EulerConvention {
     extrinsic: bool,
     degrees: bool,
     _seq: [Unit<Vector3<f64>>; 3],
+    _seq: [char; 3],
 }
 
 impl EulerConvention {
@@ -23,6 +26,16 @@ impl EulerConvention {
         // if not extrinsic, then the order of the rotations is reversed
         let mut angles: [f64; 3];
         let _observable: bool;
+    fn _euler_to_matrix_radians(&self, angles: [f64; 3]) -> Matrix3<f64> {
+        // If extrinsic, reverse both sequence and angles
+        let (seq, angles) = if self.extrinsic {
+            (
+                self.sequence.chars().rev().collect::<String>(),
+                [angles[2], angles[1], angles[0]],
+            )
+        } else {
+            (self.sequence.clone(), angles)
+        };
 
         if self.extrinsic {
          (angles, _observable) = rot.euler_angles_ordered(self._seq, self.extrinsic);
@@ -34,6 +47,68 @@ impl EulerConvention {
         }
         angles = angles.map(|angle| -angle);
         angles
+        // Define the individual axis rotations
+        let rot_x = |angle: f64| {
+            Matrix3::new(
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                angle.cos(),
+                -angle.sin(),
+                0.0,
+                angle.sin(),
+                angle.cos(),
+            )
+        };
+
+        let rot_y = |angle: f64| {
+            Matrix3::new(
+                angle.cos(),
+                0.0,
+                angle.sin(),
+                0.0,
+                1.0,
+                0.0,
+                -angle.sin(),
+                0.0,
+                angle.cos(),
+            )
+        };
+
+        let rot_z = |angle: f64| {
+            Matrix3::new(
+                angle.cos(),
+                -angle.sin(),
+                0.0,
+                angle.sin(),
+                angle.cos(),
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            )
+        };
+
+        // Apply the correct multiplication order based on sequence
+        let (alpha, beta, gamma) = (angles[0], angles[1], angles[2]);
+        let rotation_matrix = match seq.as_str() {
+            "XYZ" => rot_x(alpha) * rot_y(beta) * rot_z(gamma),
+            "ZYX" => rot_z(alpha) * rot_y(beta) * rot_x(gamma),
+            "XZX" => rot_x(alpha) * rot_z(beta) * rot_x(gamma),
+            "XZY" => rot_x(alpha) * rot_z(beta) * rot_y(gamma),
+            "XYX" => rot_x(alpha) * rot_y(beta) * rot_x(gamma),
+            "YXY" => rot_y(alpha) * rot_x(beta) * rot_y(gamma),
+            "YXZ" => rot_y(alpha) * rot_x(beta) * rot_z(gamma),
+            "YZX" => rot_y(alpha) * rot_z(beta) * rot_x(gamma),
+            "YZY" => rot_y(alpha) * rot_z(beta) * rot_y(gamma),
+            "ZXY" => rot_z(alpha) * rot_x(beta) * rot_y(gamma),
+            "ZXZ" => rot_z(alpha) * rot_x(beta) * rot_z(gamma),
+            "ZYZ" => rot_z(alpha) * rot_y(beta) * rot_z(gamma),
+            _ => panic!("Unsupported sequence"),
+        };
+
+        rotation_matrix
     }
     fn _matrix_to_euler(&self, rot: Rotation<f64, 3>) -> [f64; 3] {
         let angles = self._matrix_to_euler_radians(rot);
