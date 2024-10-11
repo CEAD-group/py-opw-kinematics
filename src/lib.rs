@@ -121,7 +121,6 @@ impl EulerConvention {
             _ => panic!("Invalid axis: {}", axis), // Panic if an invalid axis is provided
         }
     }
-
     fn _get_angles(
         &self,
         extrinsic: bool,
@@ -136,13 +135,11 @@ impl EulerConvention {
         let eps = 1e-7; // Small threshold for floating-point comparison to detect singularities
         let pi = PI;
 
-        // Determine the indices for the first and third angles based on extrinsic or intrinsic rotation
         let (angle_first, angle_third) = if extrinsic { (0, 2) } else { (2, 0) };
 
         let mut angles = [0.0; 3];
 
         // Step 2: Compute the second angle
-        // Similar to Python's atan2(hypot, hypot) to compute an intermediate value for rotation angles
         angles[1] = 2.0 * (c.hypot(d)).atan2(a.hypot(b));
 
         // Check for singularities where angles[1] = 0 or π (gimbal lock conditions)
@@ -187,7 +184,7 @@ impl EulerConvention {
             }
         }
 
-        // Print warning for gimbal lock detection, similar to Python's `warnings.warn`
+        // Print warning for gimbal lock detection
         if case != 0 {
             println!("Gimbal lock detected. Setting third angle to zero since it is not possible to uniquely determine all angles.");
         }
@@ -197,7 +194,6 @@ impl EulerConvention {
 
     fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
         // Reverse sequence if intrinsic rotation is required
-        // Matches SciPy's behavior to reverse axis sequence for intrinsic rotations
         let mut seq: Vec<char> = self.sequence.chars().collect();
         if !self.extrinsic {
             seq.reverse();
@@ -210,7 +206,7 @@ impl EulerConvention {
 
         let symmetric = i == k;
         if symmetric {
-            k = 3 - i - j; // Calculate third axis for symmetric sequences (X, Y, Z cycles)
+            k = 3 - i - j;
         }
 
         // Determine the sign based on the permutation parity of the axis sequence
@@ -225,32 +221,18 @@ impl EulerConvention {
             q = Quaternion::new(-q.w, -q.i, -q.j, -q.k);
         }
 
-        // Permute quaternion elements based on the rotation sequence
-        let a;
-        let b;
-        let c;
-        let d;
-
-        // Permute quaternion elements based on the rotation sequence. This are the indices of the quaternion elements
-        //      q[0] == q.i
-        //      q[1] == q.j
-        //      q[2] == q.k
-        //      q[3] == q.w
-
-        // Adjust quaternion elements for asymmetric sequences
-        if symmetric {
-            a = q[3];
-            b = q[i];
-            c = q[j];
-            d = q[k] * sign;
+        // Step 1: Permute quaternion elements based on the rotation sequence
+        let (a, b, c, d) = if symmetric {
+            (q.w, q[i], q[j], q[k] * sign)
         } else {
-            // Python-like adjustments for asymmetric sequences
-            // These adjustments are inspired by the original SciPy source to handle all cases properly
-            a = q[3] - q[j];
-            b = q[i] + q[k] * sign;
-            c = q[j] + q[3];
-            d = q[k] * sign - q[i];
-        }
+            // Adjust quaternion elements for asymmetric sequences
+            (
+                q.w - q[j],
+                q[i] + q[k] * sign,
+                q[j] + q.w,
+                q[k] * sign - q[i],
+            )
+        };
 
         // Compute Euler angles using helper function
         self._get_angles(self.extrinsic, symmetric, sign, PI / 2.0, a, b, c, d)
@@ -265,11 +247,6 @@ impl EulerConvention {
         let mut result = self._matrix_to_euler_radians(rot);
         if self.degrees {
             result = result.map(|angle| angle.to_degrees());
-            result = [
-                result[0].to_degrees(),
-                result[1].to_degrees(),
-                result[2].to_degrees(),
-            ];
         }
         result
     }
