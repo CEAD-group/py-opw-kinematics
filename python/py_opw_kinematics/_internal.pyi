@@ -54,6 +54,40 @@ class EulerConvention:
         """
         ...
 
+    def matrix_to_quaternion(
+        self, rot: List[List[float]]
+    ) -> Tuple[float, float, float, float]:
+        """
+        Converts a rotation matrix to a quaternion.
+
+        :param rot: 3x3 rotation matrix.
+        :return: Corresponding quaternion in the order (w, i, j, k).
+        """
+        ...
+
+    def quaternion_to_euler(
+        self, quat: Tuple[float, float, float, float]
+    ) -> Tuple[float, float, float]:
+        """
+        Converts a quaternion to Euler angles based on the current convention.
+
+        :param quat: Quaternion in the order (w, i, j, k).
+        :return: Euler angles in the current convention.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the EulerConvention instance.
+        """
+        ...
+
+    def __str__(self) -> str:
+        """
+        Returns a human-readable string representation of the EulerConvention instance.
+        """
+        ...
+
 class KinematicModel:
     a1: float
     a2: float
