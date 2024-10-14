@@ -164,6 +164,16 @@ def test_robot_kinematics_roundtrip(
         np.allclose(solution, joints, atol=1e-3) for solution in joint_solutions
     ), f"No valid joint solution found for joints: {joints}, {joint_solutions}"
 
+    # Ensure all forward kinematics from the computed joint angles match the original pose
+    for joint_solution in joint_solutions:
+        position_solution, orientation_solution = robot.forward(joints=joint_solution)
+        assert np.allclose(
+            position, position_solution, atol=1e-3
+        ), f"Position mismatch: {position} != {position_solution}"
+        assert np.allclose(
+            orientation, orientation_solution, atol=1e-3
+        ), f"Orientation mismatch: {orientation} != {orientation_solution}"
+
 
 def test_settings_and_getting_ee_rotation(example_robot):
     robot = example_robot
