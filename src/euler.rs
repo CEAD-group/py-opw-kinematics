@@ -96,11 +96,7 @@ impl EulerConvention {
     }
 
     pub fn _matrix_to_quaternion(&self, rotmat: &Rotation3<f64>) -> UnitQuaternion<f64> {
-        // Create a UnitQuaternion from the inverse of the rotation matrix
-        // The inverse of the rotation matrix ensures proper quaternion conversion
-        // This is similar to the logic in SciPy's `Rotation` class.
-        // TODO: Find out why the inverse is needed here. Highly suspicious but seems to work.
-        let q = UnitQuaternion::from_rotation_matrix(&rotmat.inverse());
+        let q = UnitQuaternion::from_rotation_matrix(&rotmat);
 
         // Ensure quaternion's w-component is non-negative
         // This is done to avoid discontinuities in representation, similar to SciPy's approach
@@ -299,7 +295,7 @@ impl EulerConvention {
     }
 
     pub fn matrix_to_euler(&self, rot: [[f64; 3]; 3]) -> [f64; 3] {
-        let rotmat = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
+        let rotmat = Rotation3::from_matrix_unchecked(Matrix3::from(rot).transpose());
         self._matrix_to_euler(rotmat)
     }
 
@@ -312,7 +308,7 @@ impl EulerConvention {
         ]
     }
     pub fn matrix_to_quaternion(&self, rot: [[f64; 3]; 3]) -> [f64; 4] {
-        let rotmat = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
+        let rotmat = Rotation3::from_matrix_unchecked(Matrix3::from(rot).transpose());
         let quaternion = self._matrix_to_quaternion(&rotmat);
         [quaternion.w, quaternion.i, quaternion.j, quaternion.k]
     }

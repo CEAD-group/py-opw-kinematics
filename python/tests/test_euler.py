@@ -157,3 +157,39 @@ def test_matrix_to_euler_equivalent(degrees, angles, extrinsic, seq="XYZ"):
 
     # Check if the recomputed matrix is approximately equal to the original matrix
     assert recomputed_matrix == pytest.approx(matrix, abs=1e-3)
+
+
+@pytest.mark.parametrize("in_angles", [[30, 0, 50], [60, 40, 50]])
+@pytest.mark.parametrize("out_extrinsic", [True, False])
+@pytest.mark.parametrize(
+    "out_seq",
+    [
+        "XYZ",
+        "XZX",
+    ],
+)
+def test_euler_convention_to_other_convention(
+    extrinsic,
+    in_angles,
+    out_extrinsic,
+    out_seq,
+    seq="XYZ",
+):
+    # Create EulerConvention object
+    in_convention = EulerConvention(seq, extrinsic=extrinsic, degrees=True)
+    out_convention = EulerConvention(out_seq, extrinsic=out_extrinsic, degrees=True)
+
+    # Get the result from EulerConvention
+    res = in_convention.convert(out_convention, in_angles)
+
+    # Get the expected result using SciPy
+    expected = Rotation.from_matrix(
+        Rotation.from_euler(
+            seq.lower() if extrinsic else seq.upper(), in_angles, degrees=True
+        ).as_matrix()
+    ).as_euler(out_seq.lower() if out_extrinsic else out_seq.upper(), degrees=True)
+
+    assert res == pytest.approx(expected)
+
+    if (extrinsic == out_extrinsic) and (seq == out_seq):
+        assert expected == pytest.approx(in_angles)
