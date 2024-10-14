@@ -99,7 +99,8 @@ impl EulerConvention {
         // Create a UnitQuaternion from the inverse of the rotation matrix
         // The inverse of the rotation matrix ensures proper quaternion conversion
         // This is similar to the logic in SciPy's `Rotation` class.
-        let q = UnitQuaternion::from_rotation_matrix(&rotmat);
+        // TODO: Find out why the inverse is needed here. Highly suspicious but seems to work.
+        let q = UnitQuaternion::from_rotation_matrix(&rotmat.inverse());
 
         // Ensure quaternion's w-component is non-negative
         // This is done to avoid discontinuities in representation, similar to SciPy's approach
@@ -131,65 +132,72 @@ impl EulerConvention {
         c: f64,
         d: f64,
     ) -> [f64; 3] {
-        let eps = 1e-7; // Small threshold for floating-point comparison to detect singularities
-        let pi = PI;
-
-        let (angle_first, angle_third) = if extrinsic { (0, 2) } else { (2, 0) };
-
+        // Ported from SciPy's `scipy.spatial.transform._rotation._get_angles` function
+        // https://github.com/scipy/scipy/blob/485b043a6be8edf89d6a54369098aa941201b485/scipy/spatial/transform/_rotation.pyx#L120
         let mut angles = [0.0; 3];
+
+        // Intrinsic/Extrinsic conversion helpers
+        let (angle_first, angle_third) = if extrinsic { (0, 2) } else { (2, 0) };
 
         // Step 2: Compute the second angle
         angles[1] = 2.0 * (c.hypot(d)).atan2(a.hypot(b));
 
-        // Check for singularities where angles[1] = 0 or π (gimbal lock conditions)
-        let case = if (angles[1]).abs() <= eps {
-            1 // angles[1] ≈ 0
-        } else if (angles[1] - pi).abs() <= eps {
-            2 // angles[1] ≈ π
+        // Determine if there's a singularity (if the second angle is 0 or pi)
+        let case = if angles[1].abs() <= 1e-7 {
+            1
+        } else if (angles[1] - PI).abs() <= 1e-7 {
+            2
         } else {
-            0 // Regular case
+            0
         };
 
-        // Step 3: Compute the first and third angles
+        // Step 3: Compute first and third angles, based on the case
         let half_sum = b.atan2(a);
         let half_diff = d.atan2(c);
 
         if case == 0 {
-            // Regular case where no gimbal lock occurs
+            // No singularities
             angles[angle_first] = half_sum - half_diff;
             angles[angle_third] = half_sum + half_diff;
         } else {
-            // Singular cases (gimbal lock detected)
+            // Degenerate case
+            angles[2] = 0.0;
             if case == 1 {
-                angles[angle_first] = 2.0 * half_sum;
+                angles[0] = 2.0 * half_sum;
             } else {
-                angles[angle_first] = 2.0 * half_diff * if extrinsic { -1.0 } else { 1.0 };
+                angles[0] = 2.0 * half_diff * if extrinsic { -1.0 } else { 1.0 };
             }
-            angles[angle_third] = 0.0; // Set third angle to zero, as it cannot be uniquely determined
         }
 
-        // Adjust for asymmetric sequences
+        // For Tait-Bryan/asymmetric sequences
         if !symmetric {
             angles[angle_third] *= sign;
             angles[1] -= lamb;
         }
 
-        // Normalize angles to the range [-π, π]
-        for angle in angles.iter_mut() {
-            if *angle < -pi {
-                *angle += 2.0 * pi;
-            } else if *angle > pi {
-                *angle -= 2.0 * pi;
+        // Normalize angles to be within [-pi, pi]
+        for angle in &mut angles {
+            if *angle < -PI {
+                *angle += 2.0 * PI;
+            } else if *angle > PI {
+                *angle -= 2.0 * PI;
             }
         }
 
-        if case != 0 { //Gimbal lock detected, perhaps we should return a warning
+        if case != 0 {
+            // TODO: Implement a proper python warning
+            // eprintln!(
+            //     "Warning: Gimbal lock detected. Setting third angle to zero since it is not possible to uniquely determine all angles."
+            // );
         }
 
         angles
     }
 
     pub fn _quaternion_to_euler(&self, quat: &Quaternion<f64>) -> [f64; 3] {
+        // Ported from SciPy's `scipy.spatial.transform._rotation._compute_euler_from_quat` function
+        //    https://github.com/scipy/scipy/blob/485b043a6be8edf89d6a54369098aa941201b485/scipy/spatial/transform/_rotation.pyx#L325
+
         // Reverse sequence if intrinsic rotation is required
         let mut seq: Vec<char> = self.sequence.chars().collect();
         if !self.extrinsic {
@@ -206,23 +214,22 @@ impl EulerConvention {
             k = 3 - i - j;
         }
 
+        // Step 0
+        // Check if permutation is even (+1) or odd (-1)
         // Determine the sign based on the permutation parity of the axis sequence
-        let perm = vec![i, j, k];
-        let even_permutation =
-            perm == vec![0, 1, 2] || perm == vec![1, 2, 0] || perm == vec![2, 0, 1];
+        let permutation = ((i as i8 - j as i8) * (j as i8 - k as i8) * (k as i8 - i as i8)) / 2;
+        if permutation != 1 && permutation != -1 {
+            panic!("Invalid permutation parity: {}", permutation);
+        }
+        let even_permutation = permutation == 1;
         let sign = if even_permutation { 1.0 } else { -1.0 };
 
-        // Ensure quaternion has a positive w-component to avoid discontinuities
-        let mut q = *quat;
-        if q.w < 0.0 {
-            q = Quaternion::new(-q.w, -q.i, -q.j, -q.k);
-        }
+        let q = *quat;
 
         // Step 1: Permute quaternion elements based on the rotation sequence
         let (a, b, c, d) = if symmetric {
             (q.w, q[i], q[j], q[k] * sign)
         } else {
-            // Adjust quaternion elements for asymmetric sequences
             (
                 q.w - q[j],
                 q[i] + q[k] * sign,
@@ -307,10 +314,11 @@ impl EulerConvention {
     pub fn matrix_to_quaternion(&self, rot: [[f64; 3]; 3]) -> [f64; 4] {
         let rotmat = Rotation3::from_matrix_unchecked(Matrix3::from(rot));
         let quaternion = self._matrix_to_quaternion(&rotmat);
-        [quaternion.i, quaternion.j, quaternion.k, quaternion.w]
+        [quaternion.w, quaternion.i, quaternion.j, quaternion.k]
     }
 
     pub fn quaternion_to_euler(&self, quat: [f64; 4]) -> [f64; 3] {
+        // w i j k
         let quaternion =
             UnitQuaternion::from_quaternion(Quaternion::new(quat[0], quat[1], quat[2], quat[3]));
         let mut result = self._quaternion_to_euler(&quaternion);

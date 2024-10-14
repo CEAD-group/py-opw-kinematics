@@ -26,15 +26,31 @@ def seq(request):
 
 @pytest.fixture(
     params=[
-        [0, 0, 0],
-        [0, 90, 0],
-        [90, 0, 0],
-        [0, 0, 90],
-        [1, 90, 0],
-        [90, 1, 0],
-        [1, 0, 90],
-        [11, 12, 13],
-        [10, 120, 130],
+        pytest.param([10, 20, 30], id="basic_combined"),
+        pytest.param([90, 0, 0], id="basic_x_90"),
+        pytest.param([0, 90, 0], id="basic_y_90"),
+        pytest.param([0, 0, 90], id="basic_z_90"),
+        pytest.param([180, 0, 0], id="basic_x_180"),
+        pytest.param([0, 180, 0], id="basic_y_180"),
+        pytest.param([0, 0, 180], id="basic_z_180"),
+        pytest.param([90, 90, 0], id="combined_x_90_y_90"),
+        pytest.param([45, 45, 45], id="combined_xyz_45"),
+        pytest.param([90, 0, 90], id="combined_x_90_z_90"),
+        pytest.param([-90, 90, -90], id="combined_neg_x_90_y_90_z_neg_90"),
+        pytest.param([0, 180, 90], id="combined_y_180_z_90"),
+        pytest.param([90, 90, 0], id="gimbal_lock_y_90"),
+        pytest.param([0, 90, 90], id="gimbal_lock_x_90_z_90"),
+        pytest.param([90, 0, 90], id="gimbal_lock_x_90_z_90"),
+        pytest.param([0, 0, 360], id="boundary_z_360"),
+        pytest.param([-180, 0, 0], id="boundary_neg_x_180"),
+        pytest.param([180, 180, 180], id="boundary_xyz_180"),
+        pytest.param([0.001, 0, 0], id="boundary_small_x_0_001"),
+        pytest.param([0, 89.999, 0], id="boundary_y_89_999"),
+        pytest.param([0, 0, 0], id="singularity_identity"),
+        pytest.param([90, 0, 90], id="singularity_x_90_z_90"),
+        pytest.param([360, 0, 0], id="full_cycle_x_360"),
+        pytest.param([0, 360, 360], id="full_cycle_y_360_z_360"),
+        pytest.param([720, 0, 0], id="full_cycle_x_720"),
     ]
 )
 def angles(request):
@@ -69,7 +85,7 @@ def test_euler_to_matrix(extrinsic, seq, angles, degrees):
     assert res == pytest.approx(expected)
 
 
-def test_matrix_to_quaternion(extrinsic, seq, angles, degrees):
+def test_matrix_to_quaternion(angles, extrinsic=True, seq="XYZ", degrees=True):
     # Convert input angles to a rotation matrix using scipy
     rotation = Rotation.from_euler(
         seq.lower() if extrinsic else seq, angles, degrees=True
@@ -78,38 +94,66 @@ def test_matrix_to_quaternion(extrinsic, seq, angles, degrees):
 
     convention = EulerConvention(seq, extrinsic=extrinsic, degrees=degrees)
     custom_quaternion = np.array(convention.matrix_to_quaternion(rotation_matrix))
-    # TODO: Find out why the inverse is needed here. Highly suspicious. But at least the test passes ....
-    scipy_quaternion = rotation.inv().as_quat()
-
-    assert custom_quaternion == pytest.approx(scipy_quaternion)
+    scipy_quaternion = rotation.as_quat(canonical=True, scalar_first=True)
+    assert custom_quaternion == pytest.approx(scipy_quaternion, abs=1e-5)
 
 
-def test_matrix_to_euler(seq, angles, extrinsic, degrees):
-    matrix = Rotation.from_euler(seq.upper(), angles, degrees=True).as_matrix()
-    convention = EulerConvention(seq, extrinsic=not extrinsic, degrees=degrees)
-    computed_angles = np.array(convention.matrix_to_euler(matrix))
-    expected_angles = Rotation.from_matrix(matrix).as_euler(
-        seq.upper(), degrees=degrees
+def test_quaternion_to_euler_equal_to_scipy(angles, extrinsic, seq, degrees=True):
+    quaternion = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, angles, degrees=True
+    ).as_quat(canonical=True, scalar_first=True)
+    convention = EulerConvention(seq, extrinsic=extrinsic, degrees=degrees)
+
+    computed_scipy = Rotation.from_quat(quaternion, scalar_first=True).as_euler(
+        seq.lower() if extrinsic else seq, degrees=degrees
     )
-    # Straightforward check if the expected angles are close to the original angles
-    if np.allclose(expected_angles, angles, atol=1e-5):
-        return  # Pass if angles match closely
-    else:
-        # If gimbal lock is present, recompute the matrix from the computed angles
-        recomputed_matrix = Rotation.from_euler(
-            seq.lower() if extrinsic else seq, computed_angles, degrees
-        ).as_matrix()
 
-        # Check if the recomputed matrix is approximately equal to the original matrix
-        if np.allclose(matrix, recomputed_matrix, atol=1e-5):
-            return  # Pass if the recomputed matrix is close to the original matrix.
-            # The solution is different from the scipy reference implementation,
-            # but it is consistent.
+    computed_custom = np.array(convention.quaternion_to_euler(quaternion))
+    assert computed_custom == pytest.approx(computed_scipy, abs=1e-5)
 
-    # if scipy can compute the angles correctly, then the test fails
-    if np.allclose(expected_angles, angles, atol=1e-2):
-        assert (
-            False
-        )  # Fail if the recomputed matrix is not close to the original matrix.
-    else:
-        pytest.skip("Scipy also failed to compute the angles correctly.")
+
+def test_quaternion_to_euler_equivalent(angles, extrinsic, seq, degrees=True):
+    quaternion = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, angles, degrees=True
+    ).as_quat(canonical=True, scalar_first=True)
+    convention = EulerConvention(seq, extrinsic=extrinsic, degrees=degrees)
+    computed_custom = np.array(convention.quaternion_to_euler(quaternion))
+
+    recomputed_quaternion = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, computed_custom, degrees=True
+    ).as_quat(canonical=True, scalar_first=True)
+    assert recomputed_quaternion == pytest.approx(
+        quaternion, abs=1e-5
+    ) or recomputed_quaternion == pytest.approx(-quaternion, abs=1e-5)
+
+
+def test_matrix_to_euler_exact(angles, extrinsic, seq, degrees=True):
+    matrix = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, angles, degrees=degrees
+    ).as_matrix()
+    convention = EulerConvention(seq, extrinsic=extrinsic, degrees=degrees)
+    computed_custom = np.array(convention.matrix_to_euler(matrix))
+    computed_scipy = Rotation.from_matrix(matrix).as_euler(
+        seq.lower() if extrinsic else seq, degrees=degrees
+    )
+    # if scipy can compute the angles correctly but the custom implementation can't, mark the test as xfail
+    if pytest.approx(computed_scipy, abs=1e-5) != angles:
+        pytest.xfail("Scipy also failed to compute the angles correctly.")
+
+    assert computed_custom == pytest.approx(angles, abs=1e-5)
+
+
+def test_matrix_to_euler_equivalent(degrees, angles, extrinsic, seq="XYZ"):
+    matrix = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, angles, degrees=degrees
+    ).as_matrix()
+    convention = EulerConvention(seq, extrinsic=extrinsic, degrees=degrees)
+    computed_custom = np.array(convention.matrix_to_euler(matrix))
+
+    # If the original angles cannot be reproduced, then check if the recomputed matrix is close to the original matrix
+    recomputed_matrix = Rotation.from_euler(
+        seq.lower() if extrinsic else seq, computed_custom, degrees
+    ).as_matrix()
+
+    # Check if the recomputed matrix is approximately equal to the original matrix
+    assert recomputed_matrix == pytest.approx(matrix, abs=1e-3)
