@@ -32,7 +32,7 @@ class EulerConvention:
         """
         ...
 
-    def matirx_to_euler(self, rot: List[List[float]]) -> Tuple[float, float, float]:
+    def matrix_to_euler(self, rot: List[List[float]]) -> Tuple[float, float, float]:
         """
         Converts a rotation matrix to Euler angles based on the current convention.
 
