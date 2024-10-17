@@ -24,6 +24,8 @@ on:
 permissions:
   contents: write
 
+env:
+  PROJECT_NAME: "py-opw-kinematics"
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -50,6 +52,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -104,6 +112,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml          
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -167,6 +181,13 @@ jobs:
         with:
           python-version: 3.12
           architecture: ${{ matrix.platform.target }}
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $VERSION = $env:GITHUB_REF -replace 'refs/tags/v',''
+          Write-Host "Setting version to $VERSION"
+          (Get-Content Cargo.toml) -replace '^version = ".*"', ('version = "' + $VERSION + '"') | Set-Content Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -195,6 +216,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update Cargo.toml Version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -216,6 +242,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml              
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -249,7 +281,7 @@ jobs:
         with:
           subject-path: 'wheels-*/*'
       - name: Publish to PyPI
-        if: "startsWith(github.ref, 'refs/tags/')"
+        if: startsWith(github.ref, 'refs/tags/')
         uses: PyO3/maturin-action@v1
         with:
           command: upload
