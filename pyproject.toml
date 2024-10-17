@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "py-opw-kinematics"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 description = "A Python wrapper for the rs-opw-kinematics library"
 authors = [{ name = "CEAD Group", email = "software@ceadgroup.com" }]
 version = "0.1.6"
@@ -17,12 +17,23 @@ dynamic = ["version"]
 dependencies = [
     "maturin>=1.7.4",
     "polars[pyarrow,numpy]>=1.9.0",
+    "numpy>=2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter"
+]
+test = [
+    "pytest",
+    "scipy",
 ]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "py_opw_kinematics._internal"
+include = ["python/py_opw_kinematics/py.typed"]
 
 [project.urls]
 Homepage = "https://github.com/CEAD-group/py-opw-kinematics"

@@ -76,9 +76,9 @@ jobs:
         with:
           python-version: 3.12
       - name: Install py_opw_kinematics
-        run: pip install dist/*cp312*.whl
-      - name: Install dependencies
-        run: pip install -r python/test-requirements.txt
+        run: |
+          WHL_FILE=$(ls dist/*cp312*.whl)
+          pip install "${WHL_FILE}[test]"
       - name: Run tests with pytest
         run: pytest
 
