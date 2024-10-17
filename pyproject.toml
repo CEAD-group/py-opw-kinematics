@@ -33,6 +33,7 @@ test = [
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "py_opw_kinematics._internal"
+include = ["python/py_opw_kinematics/py.typed"]
 
 [project.urls]
 Homepage = "https://github.com/CEAD-group/py-opw-kinematics"
