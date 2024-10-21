@@ -89,7 +89,8 @@ jobs:
           pip install "${WHL_FILE}[test]"
       - name: Run tests with pytest
         run: pytest
-
+      - name: Type checking with mypy
+        run: mypy **/*.py  
   linux:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: [lint, test]

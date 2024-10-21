@@ -179,7 +179,11 @@ class Robot:
         ...
 
     def batch_inverse(
-        self, poses: pl.DataFrame, current_joints: Optional[List[float]] = None
+        self,
+        poses: pl.DataFrame,
+        current_joints: Optional[
+            Tuple[float, float, float, float, float, float]
+        ] = None,
     ) -> pl.DataFrame:
         """
         Computes the inverse kinematics for multiple poses in batch mode.

@@ -21,11 +21,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "jupyter"
+    "jupyter",
+    "scipy-stubs"
 ]
 test = [
     "pytest",
     "scipy",
+    "mypy",
 ]
 
 [tool.maturin]
