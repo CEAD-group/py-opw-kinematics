@@ -10,7 +10,7 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
     sign_values = [-1, 1]
     flip_axes_values = [False, True]
     offset_values = [0, 180]
-    ee_rotation_values = [-90, 0]
+    ee_rotation_values = [-90.0, 0.0]
     extrinsic_values = [False]
 
     # Generate all combinations of parameters using itertools.product
@@ -82,6 +82,14 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
             ee_C,
             extrinsic,
         ) = params
+        # the large number of parmas messes up type hints
+        f1 = bool(f1)
+        f2 = bool(f2)
+        f3 = bool(f3)
+        f4 = bool(f4)
+        f5 = bool(f5)
+        f6 = bool(f6)
+        extrinsic = bool(extrinsic)
 
         robot = Robot(
             KinematicModel(
@@ -97,7 +105,7 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
                 flip_axes=(f1, f2, f3, f4, f5, f6),
             ),
             EulerConvention("XYZ", extrinsic=extrinsic, degrees=degrees),
-            ee_rotation=[ee_A, ee_B, ee_C],
+            ee_rotation=(ee_A, ee_B, ee_C),
         )
 
         # Test each known joint position against the expected transformation
