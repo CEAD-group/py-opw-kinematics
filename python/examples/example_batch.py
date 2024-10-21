@@ -16,7 +16,7 @@ kinematic_model = KinematicModel(
     has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=True, degrees=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=[0, -90, 0])
+robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
 
 n = 100000
 poses = pl.DataFrame(
@@ -31,7 +31,7 @@ poses = pl.DataFrame(
 )
 
 
-res = robot.batch_inverse(current_joints=[0, 0, -90, 0, 0, 0], poses=poses)
+res = robot.batch_inverse(current_joints=(0, 0, -90, 0, 0, 0), poses=poses)
 
 print(res)
 # %%
