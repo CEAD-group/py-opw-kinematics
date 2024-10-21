@@ -1148,12 +1148,12 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "jupyter" },
-    { name = "scipy-stubs" },
 ]
 test = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "scipy" },
+    { name = "scipy-stubs" },
 ]
 
 [package.metadata]
@@ -1165,7 +1165,7 @@ requires-dist = [
     { name = "polars", extras = ["pyarrow", "numpy"], specifier = ">=1.9.0" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "scipy", marker = "extra == 'test'" },
-    { name = "scipy-stubs", marker = "extra == 'dev'" },
+    { name = "scipy-stubs", marker = "extra == 'test'" },
 ]
 
 [[package]]
