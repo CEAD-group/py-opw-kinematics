@@ -282,6 +282,7 @@ impl Robot {
         let mut a: Vec<Option<f64>> = Vec::with_capacity(df.height());
         let mut b: Vec<Option<f64>> = Vec::with_capacity(df.height());
         let mut c: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        let mut d: Vec<Option<f64>> = Vec::with_capacity(df.height());
 
         for i in 0..df.height() {
             // Safely extract joint values, handling missing values
@@ -304,6 +305,7 @@ impl Robot {
                 a.push(Some(rotation[0]));
                 b.push(Some(rotation[1]));
                 c.push(Some(rotation[2]));
+                d.push(Some(rotation[3]));
             } else {
                 // Missing joint values, push None values
                 x.push(None);
@@ -312,6 +314,7 @@ impl Robot {
                 a.push(None);
                 b.push(None);
                 c.push(None);
+                d.push(None);
             }
         }
 
@@ -323,6 +326,7 @@ impl Robot {
             Series::new("A".into(), a),
             Series::new("B".into(), b),
             Series::new("C".into(), c),
+            Series::new("D".into(), d),
         ])
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
         Ok(PyDataFrame(df_result))
