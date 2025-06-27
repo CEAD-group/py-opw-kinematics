@@ -88,18 +88,18 @@ class Robot:
 
     def forward(
         self, joints: Tuple[float, float, float, float, float, float]
-    ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+    ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]:
         """
         Computes the forward kinematics for the given joint angles.
 
         :param joints: Joint angles of the robot in radians.
-        :return: A tuple containing the position and orientation of the tool in the world frame.
+        :return: A tuple containing the position and quaternion of the tool in the world frame.
         """
         ...
 
     def inverse(
         self,
-        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float, float]],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
@@ -107,7 +107,7 @@ class Robot:
         """
         Computes the inverse kinematics for a given pose.
 
-        :param pose: Desired pose (position and orientation) of the tool in the world frame.
+        :param pose: Desired pose (position and quaternion) of the tool in the world frame.
         :param current_joints: Current joint configuration (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
