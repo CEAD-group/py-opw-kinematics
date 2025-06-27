@@ -1,9 +1,7 @@
-mod euler; // Add this line to import the new module
-mod kinematic_model; // Add this line to import the new module
-use crate::euler::EulerConvention;
+mod kinematic_model;
 use crate::kinematic_model::KinematicModel;
 
-use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
+use nalgebra::{Isometry3, Quaternion, Translation3, UnitQuaternion};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -12,54 +10,105 @@ use polars::prelude::*;
 use polars::series::Series;
 
 use pyo3_polars::PyDataFrame;
-use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
-use rs_opw_kinematics::kinematics_impl::OPWKinematics;
+use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose, CONSTRAINT_CENTERED};
+use rs_opw_kinematics::tool::{Base, Tool};
 
 #[pyclass]
 struct Robot {
-    robot: OPWKinematics,
-    has_parallelogram: bool,
-    euler_convention: EulerConvention,
-    ee_rotation: [f64; 3],
-    ee_translation: Vector3<f64>,
-    _ee_rotation_matrix: Rotation3<f64>,
-    _internal_euler_convention: EulerConvention,
+    base_config: BaseConfig,
+    tool_config: ToolConfig,
+    _tool: Tool,
     _kinematic_model: KinematicModel,
+}
+
+#[pyclass]
+#[derive(Clone, Debug)]
+struct BaseConfig {
+    /// The translation of the base in the world frame
+    translation: [f64; 3],
+    /// The rotation of the base in quaternion (w, x, y, z)
+    rotation: [f64; 4],
+}
+
+#[pymethods]
+impl BaseConfig {
+    #[new]
+    fn new(translation: [f64; 3], rotation: [f64; 4]) -> Self {
+        BaseConfig {
+            translation,
+            rotation,
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone, Debug)]
+struct ToolConfig {
+    /// The translation of the tool in the base frame
+    translation: [f64; 3],
+    /// The rotation of the tool in quaternion (w, x, y, z)
+    rotation: [f64; 4],
+}
+
+#[pymethods]
+impl ToolConfig {
+    #[new]
+    fn new(translation: [f64; 3], rotation: [f64; 4]) -> Self {
+        ToolConfig {
+            translation,
+            rotation,
+        }
+    }
 }
 
 #[pymethods]
 impl Robot {
     #[new]
-    #[pyo3(signature = (kinematic_model, euler_convention, ee_rotation=None, ee_translation=None))]
+    #[pyo3(signature = (kinematic_model, base_config, tool_config))]
     fn new(
         kinematic_model: KinematicModel,
-        euler_convention: EulerConvention,
-        ee_rotation: Option<[f64; 3]>,
-        ee_translation: Option<[f64; 3]>,
+        base_config: BaseConfig,
+        tool_config: ToolConfig,
     ) -> PyResult<Self> {
-        let robot = kinematic_model.to_opw_kinematics(euler_convention.degrees);
-        let has_parallelogram = kinematic_model.has_parallelogram;
-        let degrees = euler_convention.degrees;
+        let robot = kinematic_model.to_opw_kinematics();
 
-        // Initialize the internal rotation matrix to identity as a placeholder
-        let _ee_rotation_matrix = Rotation3::identity(); // Assuming Rotation3::identity() is a valid way to initialize to identity
+        let base = Isometry3::from_parts(
+            Translation3::from(base_config.translation),
+            UnitQuaternion::from_quaternion(Quaternion::new(
+                base_config.rotation[0],
+                base_config.rotation[1],
+                base_config.rotation[2],
+                base_config.rotation[3],
+            )),
+        );
 
-        let _internal_euler_convention = EulerConvention::new("XYZ".to_string(), false, degrees)?;
+        let tool = Isometry3::from_parts(
+            Translation3::from(tool_config.translation),
+            UnitQuaternion::from_quaternion(Quaternion::new(
+                tool_config.rotation[0],
+                tool_config.rotation[1],
+                tool_config.rotation[2],
+                tool_config.rotation[3],
+            )),
+        );
 
-        // Create an instance with initial values
-        let mut robot_instance = Robot {
-            robot,
-            has_parallelogram,
-            euler_convention,
-            ee_rotation: ee_rotation.unwrap_or([0.0, 0.0, 0.0]),
-            ee_translation: ee_translation.unwrap_or([0.0, 0.0, 0.0]).into(),
-            _ee_rotation_matrix,
-            _internal_euler_convention,
-            _kinematic_model: kinematic_model,
+        let robot_with_base = Base {
+            robot: Arc::new(robot),
+            base,
         };
 
-        // Use the setter to assign ee_rotation if provided
-        robot_instance.set_ee_rotation(robot_instance.ee_rotation)?;
+        let robot_on_base_with_tool = Tool {
+            robot: Arc::new(robot_with_base),
+            tool,
+        };
+
+        // Create an instance with initial values
+        let robot_instance = Robot {
+            base_config,
+            tool_config,
+            _tool: robot_on_base_with_tool,
+            _kinematic_model: kinematic_model,
+        };
 
         Ok(robot_instance)
     }
@@ -74,90 +123,64 @@ impl Robot {
             .join("\n");
 
         format!(
-            "Robot(\n    kinematic_model=\n{},\n    euler_convention={},\n    ee_rotation={:?},\n    ee_translation={:?}\n)",
-            km_repr,
-            self.euler_convention.__repr__(),
-            self.ee_rotation,
-            self.ee_translation
+            "Robot(\n    kinematic_model=\n{},\n    base_config={:?},\n    tool_config={:?}\n)",
+            km_repr, self.base_config, self.tool_config
         )
     }
 
-    #[getter]
-    fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
-        let euler_angles = self
-            .euler_convention
-            ._matrix_to_euler(self._ee_rotation_matrix);
-        Ok(euler_angles)
+    /// Forward kinematics: calculates the pose for given joints in degrees
+    fn forward(&self, joints: [f64; 6]) -> ([f64; 3], [f64; 4]) {
+        let joints = joints.map(|x| x.to_radians());
+        let pose: Pose = self._tool.forward(&joints);
+        // Storage order is (x, y, z, w)
+        let quat = [
+            pose.rotation.coords[3],
+            pose.rotation.coords[0],
+            pose.rotation.coords[1],
+            pose.rotation.coords[2],
+        ];
+        (pose.translation.vector.into(), quat)
     }
 
-    #[setter]
-    fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
-        self._ee_rotation_matrix = self.euler_convention._euler_to_matrix(ee_rotation);
-        Ok(())
-    }
-
-    #[getter]
-    fn get_ee_translation(&self) -> [f64; 3] {
-        self.ee_translation.into()
-    }
-    #[setter]
-    fn set_ee_translation(&mut self, ee_translation: [f64; 3]) {
-        self.ee_translation = ee_translation.into();
-    }
-
-    /// Forward kinematics: calculates the pose for given joints
-    fn forward(&self, mut joints: [f64; 6]) -> ([f64; 3], [f64; 3]) {
-        if self.has_parallelogram {
-            joints[2] += joints[1];
-        }
-        if self.euler_convention.degrees {
-            joints.iter_mut().for_each(|x| *x = x.to_radians());
-        }
-        let pose: Pose = self.robot.forward(&joints);
-        let combined_rotation = pose.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
-        let translation = pose.translation.vector + combined_rotation * self.ee_translation;
-        let rotation = self.euler_convention._matrix_to_euler(combined_rotation);
-
-        (translation.into(), rotation)
+    fn convert_to_degrees(&self, joints: [f64; 6]) -> [f64; 6] {
+        joints
+            .iter()
+            .map(|x| x.to_degrees())
+            .collect::<Vec<f64>>()
+            .try_into()
+            .unwrap()
     }
 
     #[pyo3(signature = (pose, current_joints=None))]
     fn inverse(
         &self,
-        pose: ([f64; 3], [f64; 3]),
+        pose: ([f64; 3], [f64; 4]),
         current_joints: Option<[f64; 6]>,
     ) -> Vec<[f64; 6]> {
-        let rotation_matrix = self.euler_convention._euler_to_matrix(pose.1);
-        let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
-        let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
-        let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
-        let iso_pose = Isometry3::from_parts(translation, rotation.into());
-        let mut solutions = match current_joints {
-            Some(mut joints) => {
-                if self.has_parallelogram {
-                    joints[2] += joints[1];
-                }
-                if self.euler_convention.degrees {
-                    joints.iter_mut().for_each(|x| *x = x.to_radians());
-                }
-                self.robot.inverse_continuing(&iso_pose, &joints)
-            }
-            None => self.robot.inverse(&iso_pose),
+        let quat = UnitQuaternion::from_quaternion(Quaternion::new(
+            pose.1[0], pose.1[1], pose.1[2], pose.1[3],
+        ));
+        let iso_pose = Isometry3::from_parts(Translation3::from(pose.0), quat);
+
+        let joints = if let Some(joints) = current_joints {
+            joints
+        } else {
+            CONSTRAINT_CENTERED
         };
+        let solutions = self._tool.inverse_continuing(&iso_pose, &joints);
 
-        if self.has_parallelogram {
-            solutions.iter_mut().for_each(|x| x[2] -= x[1]);
-        }
-
-        if self.euler_convention.degrees {
-            solutions.iter_mut().for_each(|x| {
-                for angle in x.iter_mut() {
-                    *angle = angle.to_degrees();
-                }
-            });
-        }
+        // Calculate singularities and remove them from the solutions
+        let singularities = solutions
+            .iter()
+            .map(|x| self._tool.kinematic_singularity(x))
+            .collect::<Vec<_>>();
 
         solutions
+            .iter()
+            .zip(singularities)
+            .filter(|(_, singularity)| singularity.is_none())
+            .map(|(x, _)| self.convert_to_degrees(*x))
+            .collect::<Vec<_>>()
     }
 
     #[pyo3(signature = (poses, current_joints=None))]
@@ -174,6 +197,7 @@ impl Robot {
         let a = extract_column_f64(&df, "A")?;
         let b = extract_column_f64(&df, "B")?;
         let c = extract_column_f64(&df, "C")?;
+        let d = extract_column_f64(&df, "D")?;
 
         // Use Vec<Option<f64>> to allow for None (Null) values
         let mut j1: Vec<Option<f64>> = Vec::with_capacity(df.height());
@@ -191,11 +215,12 @@ impl Robot {
             let a_i = a.get(i);
             let b_i = b.get(i);
             let c_i = c.get(i);
+            let d_i = d.get(i);
 
-            if let (Some(x), Some(y), Some(z), Some(a), Some(b), Some(c)) =
-                (x_i, y_i, z_i, a_i, b_i, c_i)
+            if let (Some(x), Some(y), Some(z), Some(a), Some(b), Some(c), Some(d)) =
+                (x_i, y_i, z_i, a_i, b_i, c_i, d_i)
             {
-                let pose = ([x, y, z], [a, b, c]);
+                let pose = ([x, y, z], [a, b, c, d]);
 
                 let solutions = self.inverse(pose, current_joints);
                 if let Some(best_solution) = solutions.first() {
@@ -307,9 +332,10 @@ impl Robot {
 /// Module initialization for Python
 #[pymodule(name = "_internal")]
 fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<EulerConvention>()?;
     m.add_class::<KinematicModel>()?;
     m.add_class::<Robot>()?;
+    m.add_class::<BaseConfig>()?;
+    m.add_class::<ToolConfig>()?;
     Ok(())
 }
 
@@ -336,4 +362,164 @@ fn extract_column_f64(df: &DataFrame, column_name: &str) -> PyResult<Float64Chun
     })?;
 
     Ok(chunked.clone()) // Return an owned clone to satisfy ownership requirements.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_forward() {
+        let kinematic_model = KinematicModel {
+            a1: 0.150,  // Distance from base to J1 axis
+            a2: -0.110, // Distance from J1 to J2 axis (parallel offset)
+            b: 0.0,     // Distance from J2 to J3 axis (perpendicular offset)
+            c1: 0.4865, // Distance from base to J2 axis (height)
+            c2: 0.700,  // Distance from J2 to J3 axis (upper arm length)
+            c3: 0.678,  // Distance from J3 to J4 axis (forearm length)
+            c4: 0.135,  // Distance from J4 to J6 axis (wrist length)
+            offsets: [0.0, 0.0, -std::f64::consts::FRAC_PI_2, 0.0, 0.0, 0.0],
+            sign_corrections: [1, 1, 1, 1, 1, 1],
+        };
+        let base_config = BaseConfig {
+            translation: [0.0, 0.0, 2.3],
+            rotation: [0.0, 1.0, 0.0, 0.0],
+        };
+        let tool_config = ToolConfig {
+            translation: [0.0, 0.0, 0.095],
+            rotation: [
+                -0.00012991440873552217,
+                -0.968154906938256,
+                -0.0004965996111545046,
+                0.2503407964804168,
+            ],
+        };
+        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
+        let joints = [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01];
+        let (translation, rotation) = robot.forward(joints);
+        assert_eq!(
+            translation,
+            [0.2000017014027134, -0.30003856402112994, 0.8999972858765594]
+        );
+        assert_eq!(
+            rotation,
+            [
+                0.8518484534487618,
+                0.13765321623120808,
+                -0.46476827163476586,
+                -0.19848490647852607
+            ]
+        );
+    }
+
+    #[test]
+    fn test_simple_inverse() {
+        let kinematic_model = KinematicModel {
+            a1: 0.150,  // Distance from base to J1 axis
+            a2: -0.110, // Distance from J1 to J2 axis (parallel offset)
+            b: 0.0,     // Distance from J2 to J3 axis (perpendicular offset)
+            c1: 0.4865, // Distance from base to J2 axis (height)
+            c2: 0.700,  // Distance from J2 to J3 axis (upper arm length)
+            c3: 0.678,  // Distance from J3 to J4 axis (forearm length)
+            c4: 0.135,  // Distance from J4 to J6 axis (wrist length)
+            offsets: [0.0, 0.0, -std::f64::consts::FRAC_PI_2, 0.0, 0.0, 0.0],
+            sign_corrections: [1, 1, 1, 1, 1, 1],
+        };
+        let base_config = BaseConfig {
+            translation: [0.0, 0.0, 2.3],
+            rotation: [0.0, 1.0, 0.0, 0.0],
+        };
+        let tool_config = ToolConfig {
+            translation: [0.0, 0.0, 0.095],
+            rotation: [
+                -0.00012991440873552217,
+                -0.968154906938256,
+                -0.0004965996111545046,
+                0.2503407964804168,
+            ],
+        };
+        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
+        let pose = (
+            [0.2000017014027134, -0.30003856402112994, 0.8999972858765594],
+            [
+                0.8518484534487618,
+                0.13765321623120808,
+                -0.46476827163476586,
+                -0.19848490647852607,
+            ],
+        );
+        let solutions = robot.inverse(pose, None);
+        assert_eq!(
+            solutions,
+            // Lots of solutions and not sure if all of them are great
+            // Filtering should be done based on the quadrant and axis 6 normalization
+            [
+                [
+                    76.90000000000002,
+                    -39.03534017507007,
+                    32.97665093151276,
+                    33.52534250992946,
+                    -93.50495846663024,
+                    -58.70431261343441
+                ],
+                [
+                    -103.09999999999998,
+                    -85.03,
+                    19.059999999999985,
+                    109.80999999999997,
+                    35.870000000000005,
+                    5.010000000000008
+                ],
+                [
+                    76.90000000000002,
+                    73.06238461570422,
+                    165.4543038481549,
+                    -61.28358770585671,
+                    38.94565680362163,
+                    -6.185291336143623
+                ],
+                [
+                    // This is the exact solution from the forward pass plus 360 degrees on axis 6
+                    -103.09999999999998,
+                    -85.03,
+                    19.059999999999985,
+                    -70.19000000000001,
+                    -35.870000000000005,
+                    -174.98999999999998
+                ],
+                [
+                    76.90000000000002,
+                    -39.03534017507007,
+                    32.97665093151276,
+                    -146.47465749007054,
+                    93.50495846663024,
+                    121.29568738656559
+                ],
+                [
+                    -103.09999999999998,
+                    13.524762945285602,
+                    179.37095477966767,
+                    33.482250880445946,
+                    87.80184590248223,
+                    117.5230126608287
+                ],
+                [
+                    -103.09999999999998,
+                    13.524762945285602,
+                    179.37095477966767,
+                    -146.51774911955405,
+                    -87.80184590248223,
+                    -62.4769873391713
+                ],
+                [
+                    76.90000000000002,
+                    73.06238461570422,
+                    165.4543038481549,
+                    118.7164122941433,
+                    -38.94565680362163,
+                    173.81470866385638
+                ]
+            ]
+        );
+    }
 }

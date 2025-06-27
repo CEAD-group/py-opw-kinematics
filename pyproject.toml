@@ -15,19 +15,21 @@ classifiers = [
 ]
 dependencies = [
     "maturin>=1.7.4",
-    "polars[pyarrow,numpy]>=1.9.0",
-    "numpy>=1.26.4", 
+    "numpy>=1.26.4",
+    "polars[numpy,pyarrow]>=1.31.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "scipy",
+    "mypy",
+    "scipy-stubs"
 ]
 
 [project.optional-dependencies]
 dev = [
     "jupyter",
-]
-test = [
-    "pytest",
-    "scipy",
-    "mypy",
-    "scipy-stubs"
 ]
 
 [tool.maturin]

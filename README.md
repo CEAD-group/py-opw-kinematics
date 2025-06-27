@@ -1,5 +1,7 @@
 # py-opw-kinematics
 
+⚠️ Forked from [py-opw-kinematics](https://github.com/bourumir-wyngs/py-opw-kinematics) to have a simplified version with quaternions instead of Euler angles.
+
 **py-opw-kinematics** is a Python wrapper for the [rs-opw-kinematics](https://github.com/bourumir-wyngs/rs-opw-kinematics) library, providing an interface for solving inverse and forward kinematics of six-axis industrial robots with a parallel base and spherical wrist. Designed for convenience and performance, this wrapper is suitable for robotics simulation, control, and trajectory planning directly from Python.
 
 ## Key Features
@@ -14,7 +16,7 @@
 Install using pip:
 
 ```sh
-pip install py-opw-kinematics
+uv pip install https://github.com/TETMET/py-opw-kinematics
 ```
 
 

@@ -14,13 +14,11 @@ pub struct KinematicModel {
     pub c3: f64,
     pub c4: f64,
     pub offsets: [f64; 6],
-    pub flip_axes: [bool; 6], // Renamed and changed to boolean array
-    pub has_parallelogram: bool,
+    pub sign_corrections: [i8; 6],
 }
 
 impl KinematicModel {
-    pub fn to_opw_kinematics(&self, degrees: bool) -> OPWKinematics {
-        let sign_corrections = self.flip_axes.map(|x| if x { -1 } else { 1 });
+    pub fn to_opw_kinematics(&self) -> OPWKinematics {
         OPWKinematics::new(Parameters {
             a1: self.a1,
             a2: self.a2,
@@ -29,17 +27,8 @@ impl KinematicModel {
             c2: self.c2,
             c3: self.c3,
             c4: self.c4,
-            offsets: if degrees {
-                self.offsets
-                    .iter()
-                    .map(|&x| x.to_radians())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap()
-            } else {
-                self.offsets
-            },
-            sign_corrections,
+            offsets: self.offsets,
+            sign_corrections: self.sign_corrections,
             dof: 6,
         })
     }
@@ -57,8 +46,7 @@ impl KinematicModel {
         c3 = 0.0,
         c4 = 0.0,
         offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        flip_axes = (false, false, false, false, false, false),
-        has_parallelogram = false
+        sign_corrections = (1, 1, 1, 1, 1, 1),
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -70,8 +58,7 @@ impl KinematicModel {
         c3: f64,
         c4: f64,
         offsets: (f64, f64, f64, f64, f64, f64),
-        flip_axes: (bool, bool, bool, bool, bool, bool),
-        has_parallelogram: bool,
+        sign_corrections: (i8, i8, i8, i8, i8, i8),
     ) -> PyResult<Self> {
         Ok(KinematicModel {
             a1,
@@ -82,8 +69,7 @@ impl KinematicModel {
             c3,
             c4,
             offsets: offsets.into(),
-            flip_axes: flip_axes.into(),
-            has_parallelogram,
+            sign_corrections: sign_corrections.into(),
         })
     }
 
@@ -129,20 +115,15 @@ impl KinematicModel {
     }
 
     #[getter]
-    pub fn flip_axes(&self) -> Vec<bool> {
-        self.flip_axes.to_vec() // Convert the array to a Vec for easier handling in Python.
-    }
-
-    #[getter]
-    pub fn has_parallelogram(&self) -> bool {
-        self.has_parallelogram
+    pub fn sign_corrections(&self) -> Vec<i8> {
+        self.sign_corrections.to_vec() // Convert the array to a Vec for easier handling in Python.
     }
 
     pub fn __repr__(&self) -> String {
         format!(
-            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n    has_parallelogram={}\n)",
+            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    sign_corrections={:?}\n)",
             self.a1, self.a2, self.b, self.c1, self.c2, self.c3, self.c4,
-            self.offsets, self.flip_axes, self.has_parallelogram
+            self.offsets, self.sign_corrections
         )
     }
 }
