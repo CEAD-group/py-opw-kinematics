@@ -54,9 +54,21 @@ class BaseConfig:
     translation: Tuple[float, float, float]
     rotation: Tuple[float, float, float, float]
 
+    def __init__(
+        self,
+        translation: Tuple[float, float, float],
+        rotation: Tuple[float, float, float, float],
+    ) -> None: ...
+
 class ToolConfig:
     translation: Tuple[float, float, float]
     rotation: Tuple[float, float, float, float]
+
+    def __init__(
+        self,
+        translation: Tuple[float, float, float],
+        rotation: Tuple[float, float, float, float],
+    ) -> None: ...
 
 class Robot:
     def __init__(
