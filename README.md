@@ -19,69 +19,44 @@ Install using pip:
 uv pip install https://github.com/TETMET/py-opw-kinematics
 ```
 
-
 Note: Rust is required to compile the underlying Rust library if not using pre-built binaries.
 
 ## Usage Example
 
 ### Parameters
 
-This library uses seven kinematic parameters (_a1, a2, b, c1, c2, c3_, and _c4_). This solver assumes that the arm is at zero when all joints stick straight up in the air, as seen in the image below. It also assumes that all
-rotations are positive about the base axis of the robot. No other setup is required.
 
 ![OPW Diagram](https://bourumir-wyngs.github.io/rs-opw-kinematics/documentation/opw.gif)
 <!-- ![OPW Diagram](documentation/opw.gif) -->
 
-To use the library, create a `KinematicModel` instance with the appropriate values for the 7
-kinematic parameters and any joint offsets required to bring the paper's zero position (arm up in Z) to the
-manufacturer's position. The direction of each of the axes can be flipped with the `flip_axes` parameter if your robot's axes do not match the convention in the paper.
-
-Additionally, you can specify the Euler convention to use for the end-effector rotation. The `EulerConvention` class allows you to specify the order of the rotations and whether they are extrinsic or intrinsic. The `degrees` parameter can be set to `True` to use degrees instead of radians.
-
-If the robot has a parallelogram between joints 2 and 3, set `has_parallelogram` to `True` to link these axes. 
-
-Below is a basic example demonstrating how to define a robot, configure Euler conventions, and compute forward kinematics.
-
 Single Operation Example
     
 ```python
+    # Initialize Kinematic Model with known parameters and inlined signs
+    kinematic_model = KinematicModel(
+        a1=0.150,
+        a2=-0.110,
+        b=0.0,
+        c1=0.4865,
+        c2=0.700,
+        c3=0.678,
+        c4=0.135,
+        offsets=(0, 0, -np.pi / 2, 0, 0, 0),
+        sign_corrections=(1, 1, 1, 1, 1, 1),
+    )
 
-from py_opw_kinematics import KinematicModel, Robot, EulerConvention
-import numpy as np
+    base_config = BaseConfig(translation=[0, 0, 2.3], rotation=[0, 1, 0, 0])
+    tool_config = ToolConfig(translation=[0, 0, 0.095], rotation=[-0.00012991440873552217, -0.968154906938256, -0.0004965996111545046, 0.2503407964804168])
 
-kinematic_model = KinematicModel(
-    a1=400,
-    a2=-250,
-    b=0,
-    c1=830,
-    c2=1175,
-    c3=1444,
-    c4=230,
-    offsets=(0,0,0,0,0,0),
-    flip_axes=(True, False, True, True, False, True),
-    has_parallelogram=True,
-)
-euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
-
-# Compute forward kinematics for a given set of joint angles
-angles = (10, 0, -90, 0, 0, 0)
-position, rotation = robot.forward(angles)
-print(f"Position: {np.round(position,2)}, Rotation: {np.round(rotation,2)}")
-
-# Compute inverse kinematics for a given position and rotation
-for solution in robot.inverse((position, rotation)):
-    print(f"Solution: {np.round(solution, 2)}")
-
+    robot = Robot(kinematic_model, base_config, tool_config)
+    pose = robot.forward([-103.1, -85.03, 19.06, -70.19, -35.87, 185.01])
+    print(f"Position: {pose[0]}")
+    print(f"Rotation: {pose[1]}")
 ```
 This example prints:
     
 ```
-Position: [2042.49 -360.15 2255.  ], Rotation: [  0.   0. -10.]
-Solution: [ 10.   0. -90.  -0.   0.   0.]
-Solution: [ 10.    90.76 -20.4   -0.    69.6    0.  ]
-Solution: [  10.    0.  -90. -180.    0.  180.]
-Solution: [  10.     90.76  -20.4  -180.    -69.6   180.  ]
+Position: [0.200, -0.3, 0.9], Rotation: [0.8518, 0.13766, -0.46472, -0.19852]
 ```
 
 ## Acknowledgements
