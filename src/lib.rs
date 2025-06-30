@@ -522,7 +522,7 @@ mod tests {
             // Lots of solutions and not sure if all of them are great
             // Filtering should be done based on the quadrant and axis 6 normalization
             [
-                // Axis configuration [0, 0, 0, 5]
+                // Axis configuration [0, 0, -1, 5]
                 [
                     76.90000000000002,
                     -39.03534017507007,
@@ -531,7 +531,7 @@ mod tests {
                     -93.50495846663024,
                     -58.70431261343441
                 ],
-                // This is the ABB solution, right now it returns axis configuration [-1, 0, -1, 5]
+                // This is the ABB solution, right now it returns axis configuration [-2, -1, 2, 5]
                 [
                     -103.09999999999998,
                     -85.03,
@@ -611,7 +611,7 @@ mod tests {
         let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
         let joints = [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01];
         let axis_configuration = robot.axis_configuration(joints);
-        assert_eq!(axis_configuration, [-1, 0, -1, 5]);
+        assert_eq!(axis_configuration, [-2, -1, 2, 5]);
     }
 
     #[test]
@@ -633,24 +633,10 @@ mod tests {
         let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
         let joints = [-133.69, -57.37, -33.13, -78.0, 54.53, -66.13];
         let axis_configuration = robot.axis_configuration(joints);
-        assert_eq!(axis_configuration, [-1, 0, 0, 4]);
+        assert_eq!(axis_configuration, [-2, -1, -1, 4]);
     }
 }
 
 fn quadrant(joint: f64) -> i32 {
-    // Normalize to [-180, 180)
-    let mut angle = joint % 360.0;
-    if angle >= 180.0 {
-        angle -= 360.0;
-    }
-    if angle < -180.0 {
-        angle += 360.0;
-    }
-    if angle > 90.0 {
-        1
-    } else if angle > -90.0 {
-        0
-    } else {
-        -1
-    }
+    (joint / 90.0).floor() as i32
 }
