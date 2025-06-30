@@ -210,7 +210,7 @@ impl Robot {
         let iso_pose = Isometry3::from_parts(Translation3::from(pose.0), quat);
 
         let joints = if let Some(joints) = current_joints {
-            joints
+            joints.map(|x| x.to_radians())
         } else {
             CONSTRAINT_CENTERED
         };
@@ -254,11 +254,10 @@ impl Robot {
         solutions
     }
 
-    #[pyo3(signature = (poses, current_joints=None, axis_configuration=None))]
+    #[pyo3(signature = (poses, axis_configuration=None))]
     fn batch_inverse(
         &self,
         poses: PyDataFrame,
-        mut current_joints: Option<[f64; 6]>,
         axis_configuration: Option<[i32; 4]>,
     ) -> PyResult<PyDataFrame> {
         let df: DataFrame = poses.into();
@@ -294,7 +293,7 @@ impl Robot {
             {
                 let pose = ([x, y, z], [a, b, c, d]);
 
-                let solutions = self.inverse(pose, current_joints, axis_configuration);
+                let solutions = self.inverse(pose, None, axis_configuration);
                 if let Some(best_solution) = solutions.first() {
                     j1.push(Some(best_solution[0]));
                     j2.push(Some(best_solution[1]));
@@ -302,7 +301,6 @@ impl Robot {
                     j4.push(Some(best_solution[3]));
                     j5.push(Some(best_solution[4]));
                     j6.push(Some(best_solution[5]));
-                    current_joints = Some(*best_solution);
                 } else {
                     // No solution found, push None values
                     j1.push(None);
