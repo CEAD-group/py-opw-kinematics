@@ -151,11 +151,58 @@ impl Robot {
             .unwrap()
     }
 
-    #[pyo3(signature = (pose, current_joints=None))]
+    /// Calculates the axis configuration of the joints.
+    ///
+    /// # Arguments
+    /// * `joints` - The joint values in degrees, as an array of 6 elements.
+    ///
+    /// # Returns
+    /// * `[i32; 4]` - Returns the axis configuration, as an array of 4 elements.
+    ///
+    /// # Details
+    /// The axis configuration is used to determine the robot's posture/quadrant, as defined in the ABB RAPID manual.
+    /// For more information, see the RAPID manual: https://library.e.abb.com/public/e0de8b2e925a4ce486d8d95add172fff/3HAC050917%20TRM%20RAPID%20RW%206-en.pdf?x-sign=bIkaheN9PPYMPzuPk5eLTe%2fTo54jWW7tiYG10MDoKYaYzmGuvBwjMZnAe6RHfLoq
+    #[pyo3(signature = (joints))]
+    fn axis_configuration(&self, joints: [f64; 6]) -> [i32; 4] {
+        let mut cfx = 0;
+        if joints[4] < 0. {
+            // Check if J5 is negative
+            cfx += 1;
+        }
+        if joints[2] < -90. {
+            // Check if J3 is negative
+            cfx += 2;
+        }
+        if joints[1] < 0. {
+            // Check if J2 is negative
+            cfx += 4;
+        }
+        let cf1 = quadrant(joints[0]);
+        let cf4 = quadrant(joints[3]);
+        let cf6 = quadrant(joints[5]);
+        [cf1, cf4, cf6, cfx]
+    }
+
+    /// Inverse kinematics: calculates the joint angles for a given pose.
+    ///
+    /// Uses the axis configuration to sort the solutions, prioritizing those that match the provided configuration.
+    ///
+    /// # Arguments
+    /// * `pose` - The target pose as a tuple: ([x, y, z], [w, x, y, z]), where the translation is in meters and the rotation is a quaternion.
+    /// * `current_joints` - (Optional) The current joint angles as an array of 6 elements (in degrees). Used as a seed for solution selection. If not provided, a default centered configuration is used.
+    /// * `axis_configuration` - (Optional) The desired axis configuration as an array of 4 elements, used to sort and prioritize solutions. See ABB RAPID manual for details.
+    ///
+    /// # Returns
+    /// * `Vec<[f64; 6]>` - A vector of possible joint solutions (in degrees), sorted by how well they match the axis configuration if provided.
+    ///
+    /// # Notes
+    /// Singular solutions are filtered out. If `axis_configuration` is provided, solutions are sorted to prioritize matches.
+    #[pyo3(signature = (pose, current_joints=None, axis_configuration=None))]
     fn inverse(
         &self,
         pose: ([f64; 3], [f64; 4]),
         current_joints: Option<[f64; 6]>,
+        axis_configuration: Option<[i32; 4]>,
     ) -> Vec<[f64; 6]> {
         let quat = UnitQuaternion::from_quaternion(Quaternion::new(
             pose.1[0], pose.1[1], pose.1[2], pose.1[3],
@@ -175,19 +222,44 @@ impl Robot {
             .map(|x| self._tool.kinematic_singularity(x))
             .collect::<Vec<_>>();
 
-        solutions
+        let solutions = solutions
             .iter()
             .zip(singularities)
             .filter(|(_, singularity)| singularity.is_none())
             .map(|(x, _)| self.convert_to_degrees(*x))
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+
+        if let Some(axis_configuration) = axis_configuration {
+            let mut solutions_with_score: Vec<_> = solutions
+                .iter()
+                .map(|sol| {
+                    let axis = self.axis_configuration(*sol);
+                    // For now only sort by cfx because there seems to be something wrong with the other quadrants
+                    let score = axis[3] == axis_configuration[3];
+                    (score, *sol)
+                })
+                .collect();
+
+            solutions_with_score.sort_by_key(|(score, _)| !*score);
+
+            // Extract the sorted solutions
+            let sorted_solutions: Vec<[f64; 6]> = solutions_with_score
+                .into_iter()
+                .map(|(_, sol)| sol)
+                .collect();
+
+            return sorted_solutions;
+        }
+
+        solutions
     }
 
-    #[pyo3(signature = (poses, current_joints=None))]
+    #[pyo3(signature = (poses, current_joints=None, axis_configuration=None))]
     fn batch_inverse(
         &self,
         poses: PyDataFrame,
         mut current_joints: Option<[f64; 6]>,
+        axis_configuration: Option<[i32; 4]>,
     ) -> PyResult<PyDataFrame> {
         let df: DataFrame = poses.into();
 
@@ -222,7 +294,7 @@ impl Robot {
             {
                 let pose = ([x, y, z], [a, b, c, d]);
 
-                let solutions = self.inverse(pose, current_joints);
+                let solutions = self.inverse(pose, current_joints, axis_configuration);
                 if let Some(best_solution) = solutions.first() {
                     j1.push(Some(best_solution[0]));
                     j2.push(Some(best_solution[1]));
@@ -372,19 +444,21 @@ fn extract_column_f64(df: &DataFrame, column_name: &str) -> PyResult<Float64Chun
 mod tests {
     use super::*;
 
+    const ABB_1660: KinematicModel = KinematicModel {
+        a1: 0.150,  // Distance from base to J1 axis
+        a2: -0.110, // Distance from J1 to J2 axis (parallel offset)
+        b: 0.0,     // Distance from J2 to J3 axis (perpendicular offset)
+        c1: 0.4865, // Distance from base to J2 axis (height)
+        c2: 0.700,  // Distance from J2 to J3 axis (upper arm length)
+        c3: 0.678,  // Distance from J3 to J4 axis (forearm length)
+        c4: 0.135,  // Distance from J4 to J6 axis (wrist length)
+        offsets: [0.0, 0.0, -std::f64::consts::FRAC_PI_2, 0.0, 0.0, 0.0],
+        sign_corrections: [1, 1, 1, 1, 1, 1],
+    };
+
     #[test]
     fn test_simple_forward() {
-        let kinematic_model = KinematicModel {
-            a1: 0.150,  // Distance from base to J1 axis
-            a2: -0.110, // Distance from J1 to J2 axis (parallel offset)
-            b: 0.0,     // Distance from J2 to J3 axis (perpendicular offset)
-            c1: 0.4865, // Distance from base to J2 axis (height)
-            c2: 0.700,  // Distance from J2 to J3 axis (upper arm length)
-            c3: 0.678,  // Distance from J3 to J4 axis (forearm length)
-            c4: 0.135,  // Distance from J4 to J6 axis (wrist length)
-            offsets: [0.0, 0.0, -std::f64::consts::FRAC_PI_2, 0.0, 0.0, 0.0],
-            sign_corrections: [1, 1, 1, 1, 1, 1],
-        };
+        let kinematic_model = ABB_1660;
         let base_config = BaseConfig {
             translation: [0.0, 0.0, 2.3],
             rotation: [0.0, 1.0, 0.0, 0.0],
@@ -418,17 +492,7 @@ mod tests {
 
     #[test]
     fn test_simple_inverse() {
-        let kinematic_model = KinematicModel {
-            a1: 0.150,  // Distance from base to J1 axis
-            a2: -0.110, // Distance from J1 to J2 axis (parallel offset)
-            b: 0.0,     // Distance from J2 to J3 axis (perpendicular offset)
-            c1: 0.4865, // Distance from base to J2 axis (height)
-            c2: 0.700,  // Distance from J2 to J3 axis (upper arm length)
-            c3: 0.678,  // Distance from J3 to J4 axis (forearm length)
-            c4: 0.135,  // Distance from J4 to J6 axis (wrist length)
-            offsets: [0.0, 0.0, -std::f64::consts::FRAC_PI_2, 0.0, 0.0, 0.0],
-            sign_corrections: [1, 1, 1, 1, 1, 1],
-        };
+        let kinematic_model = ABB_1660;
         let base_config = BaseConfig {
             translation: [0.0, 0.0, 2.3],
             rotation: [0.0, 1.0, 0.0, 0.0],
@@ -452,12 +516,13 @@ mod tests {
                 -0.19848490647852607,
             ],
         );
-        let solutions = robot.inverse(pose, None);
+        let solutions = robot.inverse(pose, None, Some([0, 0, 0, 5]));
         assert_eq!(
             solutions,
             // Lots of solutions and not sure if all of them are great
             // Filtering should be done based on the quadrant and axis 6 normalization
             [
+                // Axis configuration [0, 0, 0, 5]
                 [
                     76.90000000000002,
                     -39.03534017507007,
@@ -465,6 +530,15 @@ mod tests {
                     33.52534250992946,
                     -93.50495846663024,
                     -58.70431261343441
+                ],
+                // This is the ABB solution, right now it returns axis configuration [-1, 0, -1, 5]
+                [
+                    -103.09999999999998,
+                    -85.03,
+                    19.059999999999985,
+                    -70.19000000000001,
+                    -35.870000000000005,
+                    -174.98999999999998
                 ],
                 [
                     -103.09999999999998,
@@ -481,15 +555,6 @@ mod tests {
                     -61.28358770585671,
                     38.94565680362163,
                     -6.185291336143623
-                ],
-                [
-                    // This is the exact solution from the forward pass plus 360 degrees on axis 6
-                    -103.09999999999998,
-                    -85.03,
-                    19.059999999999985,
-                    -70.19000000000001,
-                    -35.870000000000005,
-                    -174.98999999999998
                 ],
                 [
                     76.90000000000002,
@@ -525,5 +590,67 @@ mod tests {
                 ]
             ]
         );
+    }
+
+    #[test]
+    fn test_axis_configuration_cfx_5() {
+        let kinematic_model = ABB_1660;
+        let base_config = BaseConfig {
+            translation: [0.0, 0.0, 2.3],
+            rotation: [0.0, 1.0, 0.0, 0.0],
+        };
+        let tool_config = ToolConfig {
+            translation: [0.0, 0.0, 0.095],
+            rotation: [
+                -0.00012991440873552217,
+                -0.968154906938256,
+                -0.0004965996111545046,
+                0.2503407964804168,
+            ],
+        };
+        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
+        let joints = [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01];
+        let axis_configuration = robot.axis_configuration(joints);
+        assert_eq!(axis_configuration, [-1, 0, -1, 5]);
+    }
+
+    #[test]
+    fn test_axis_configuration_cfx_4() {
+        let kinematic_model = ABB_1660;
+        let base_config = BaseConfig {
+            translation: [0.0, 0.0, 2.3],
+            rotation: [0.0, 1.0, 0.0, 0.0],
+        };
+        let tool_config = ToolConfig {
+            translation: [0.0, 0.0, 0.095],
+            rotation: [
+                -0.00012991440873552217,
+                -0.968154906938256,
+                -0.0004965996111545046,
+                0.2503407964804168,
+            ],
+        };
+        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
+        let joints = [-133.69, -57.37, -33.13, -78.0, 54.53, -66.13];
+        let axis_configuration = robot.axis_configuration(joints);
+        assert_eq!(axis_configuration, [-1, 0, 0, 4]);
+    }
+}
+
+fn quadrant(joint: f64) -> i32 {
+    // Normalize to [-180, 180)
+    let mut angle = joint % 360.0;
+    if angle >= 180.0 {
+        angle -= 360.0;
+    }
+    if angle < -180.0 {
+        angle += 360.0;
+    }
+    if angle > 90.0 {
+        1
+    } else if angle > -90.0 {
+        0
+    } else {
+        -1
     }
 }

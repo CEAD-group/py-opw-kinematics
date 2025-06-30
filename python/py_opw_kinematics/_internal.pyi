@@ -103,12 +103,14 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
+        axis_configuration: Optional[Tuple[int, int, int, int]] = None
     ) -> List[Tuple[float, float, float, float, float, float]]:
         """
         Computes the inverse kinematics for a given pose.
 
         :param pose: Desired pose (position and quaternion) of the tool in the world frame.
         :param current_joints: Current joint configuration (optional).
+        :param axis_configuration: Axis configuration (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
         ...
@@ -119,12 +121,14 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
+        axis_configuration: Optional[Tuple[int, int, int, int]] = None
     ) -> pl.DataFrame:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
         :param poses: DataFrame containing desired poses.
         :param current_joints: Current joint configuration (optional).
+        :param axis_configuration: Axis configuration (optional).
         :return: DataFrame containing the computed joint configurations.
         """
         ...
