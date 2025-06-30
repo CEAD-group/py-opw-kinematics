@@ -26,6 +26,7 @@ dev-dependencies = [
     "mypy",
     "scipy-stubs",
     "pip>=25.1.1",
+    "ruff>=0.12.1",
 ]
 
 [project.optional-dependencies]

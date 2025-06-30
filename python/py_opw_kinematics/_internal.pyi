@@ -103,7 +103,7 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
-        axis_configuration: Optional[Tuple[int, int, int, int]] = None
+        axis_configuration: Optional[Tuple[int, int, int, int]] = None,
     ) -> List[Tuple[float, float, float, float, float, float]]:
         """
         Computes the inverse kinematics for a given pose.
@@ -121,7 +121,7 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
-        axis_configuration: Optional[Tuple[int, int, int, int]] = None
+        axis_configuration: Optional[Tuple[int, int, int, int]] = None,
     ) -> pl.DataFrame:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
@@ -139,6 +139,14 @@ class Robot:
 
         :param joints: DataFrame containing joint configurations.
         :return: DataFrame containing the computed poses.
+        """
+        ...
+
+    def axis_configuration(
+        self, joints: Tuple[float, float, float, float, float, float]
+    ) -> Tuple[int, int, int, int]:
+        """
+        Computes the axis configuration for the given joint angles.
         """
         ...
 
