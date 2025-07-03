@@ -1,4 +1,6 @@
+mod axis_configuration;
 mod kinematic_model;
+use crate::axis_configuration::AxisConfiguration;
 use crate::kinematic_model::KinematicModel;
 
 use nalgebra::{Isometry3, Quaternion, Translation3, UnitQuaternion};
@@ -164,23 +166,8 @@ impl Robot {
     /// For more information, see the RAPID manual: https://library.e.abb.com/public/e0de8b2e925a4ce486d8d95add172fff/3HAC050917%20TRM%20RAPID%20RW%206-en.pdf?x-sign=bIkaheN9PPYMPzuPk5eLTe%2fTo54jWW7tiYG10MDoKYaYzmGuvBwjMZnAe6RHfLoq
     #[pyo3(signature = (joints))]
     fn axis_configuration(&self, joints: [f64; 6]) -> [i32; 4] {
-        let mut cfx = 0;
-        if joints[4] < 0. {
-            // Check if J5 is negative
-            cfx += 1;
-        }
-        if joints[2] < -90. {
-            // Check if J3 is negative
-            cfx += 2;
-        }
-        if joints[1] < 0. {
-            // Check if J2 is negative
-            cfx += 4;
-        }
-        let cf1 = quadrant(joints[0]);
-        let cf4 = quadrant(joints[3]);
-        let cf6 = quadrant(joints[5]);
-        [cf1, cf4, cf6, cfx]
+        let axis_configuration = AxisConfiguration::new(&self._kinematic_model);
+        axis_configuration.axis_configuration(joints)
     }
 
     /// Inverse kinematics: calculates the joint angles for a given pose.
@@ -234,7 +221,7 @@ impl Robot {
                 .iter()
                 .map(|sol| {
                     let axis = self.axis_configuration(*sol);
-                    // For now only sort by cfx because there seems to be something wrong with the other quadrants
+                    // For now only sort by cfx because ABB doesn't really care about the rest
                     let score = axis[3] == axis_configuration[3];
                     (score, *sol)
                 })
@@ -520,16 +507,7 @@ mod tests {
             // Lots of solutions and not sure if all of them are great
             // Filtering should be done based on the quadrant and axis 6 normalization
             [
-                // Axis configuration [0, 0, -1, 5]
-                [
-                    76.90000000000002,
-                    -39.03534017507007,
-                    32.97665093151276,
-                    33.52534250992946,
-                    -93.50495846663024,
-                    -58.70431261343441
-                ],
-                // This is the ABB solution, right now it returns axis configuration [-2, -1, 2, 5]
+                // First solution matches the ABB solution
                 [
                     -103.09999999999998,
                     -85.03,
@@ -537,6 +515,22 @@ mod tests {
                     -70.19000000000001,
                     -35.870000000000005,
                     -174.98999999999998
+                ],
+                [
+                    -103.09999999999998,
+                    13.524762945285602,
+                    179.37095477966767,
+                    -146.51774911955405,
+                    -87.80184590248223,
+                    -62.4769873391713
+                ],
+                [
+                    76.90000000000002,
+                    -39.03534017507007,
+                    32.97665093151276,
+                    33.52534250992946,
+                    -93.50495846663024,
+                    -58.70431261343441
                 ],
                 [
                     -103.09999999999998,
@@ -571,14 +565,6 @@ mod tests {
                     117.5230126608287
                 ],
                 [
-                    -103.09999999999998,
-                    13.524762945285602,
-                    179.37095477966767,
-                    -146.51774911955405,
-                    -87.80184590248223,
-                    -62.4769873391713
-                ],
-                [
                     76.90000000000002,
                     73.06238461570422,
                     165.4543038481549,
@@ -609,7 +595,7 @@ mod tests {
         let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
         let joints = [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01];
         let axis_configuration = robot.axis_configuration(joints);
-        assert_eq!(axis_configuration, [-2, -1, 2, 5]);
+        assert_eq!(axis_configuration, [-2, 0, 2, 5]);
     }
 
     #[test]
@@ -633,8 +619,4 @@ mod tests {
         let axis_configuration = robot.axis_configuration(joints);
         assert_eq!(axis_configuration, [-2, -1, -1, 4]);
     }
-}
-
-fn quadrant(joint: f64) -> i32 {
-    (joint / 90.0).floor() as i32
 }
