@@ -35,6 +35,7 @@ dev = [
 ]
 test = [
     "pytest",
+    "mypy",
 ]
 
 [tool.maturin]
