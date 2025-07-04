@@ -31,8 +31,10 @@ dev-dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
     "jupyter",
+]
+test = [
+    "pytest",
 ]
 
 [tool.maturin]
