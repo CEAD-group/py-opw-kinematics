@@ -85,7 +85,7 @@ jobs:
           python-version: 3.13
       - name: Install py_opw_kinematics
         run: |
-          WHL_FILE=$(ls dist/*cp312*.whl)
+          WHL_FILE=$(ls dist/*cp313*.whl)
           pip install "${WHL_FILE}[test]"
       - name: Run tests with pytest
         run: pytest
