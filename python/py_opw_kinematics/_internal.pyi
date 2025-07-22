@@ -102,15 +102,13 @@ class Robot:
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float, float]],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
-        ] = None,
-        axis_configuration: Optional[Tuple[int, int, int, int]] = None,
+        ] = None
     ) -> List[Tuple[float, float, float, float, float, float]]:
         """
         Computes the inverse kinematics for a given pose.
 
         :param pose: Desired pose (position and quaternion) of the tool in the world frame.
         :param current_joints: Current joint configuration (optional).
-        :param axis_configuration: Axis configuration (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
         ...
@@ -118,13 +116,11 @@ class Robot:
     def batch_inverse(
         self,
         poses: pl.DataFrame,
-        axis_configuration: Optional[Tuple[int, int, int, int]] = None,
     ) -> pl.DataFrame:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
         :param poses: DataFrame containing desired poses.
-        :param axis_configuration: Axis configuration (optional).
         :return: DataFrame containing the computed joint configurations.
         """
         ...
@@ -135,14 +131,6 @@ class Robot:
 
         :param joints: DataFrame containing joint configurations.
         :return: DataFrame containing the computed poses.
-        """
-        ...
-
-    def axis_configuration(
-        self, joints: Tuple[float, float, float, float, float, float]
-    ) -> Tuple[int, int, int, int]:
-        """
-        Computes the axis configuration for the given joint angles.
         """
         ...
 
