@@ -1061,6 +1061,7 @@ name = "py-opw-kinematics"
 source = { editable = "." }
 dependencies = [
     { name = "maturin" },
+    { name = "numpy" },
 ]
 
 [package.optional-dependencies]
@@ -1087,6 +1088,7 @@ requires-dist = [
     { name = "jupyter", marker = "extra == 'dev'" },
     { name = "maturin", specifier = ">=1.7.4" },
     { name = "mypy", marker = "extra == 'test'" },
+    { name = "numpy", specifier = ">=1.26.4" },
     { name = "pytest", marker = "extra == 'test'" },
 ]
 provides-extras = ["dev", "test"]

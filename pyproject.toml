@@ -14,7 +14,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "maturin>=1.7.4"
+    "maturin>=1.7.4",
+    "numpy>=1.26.4"
 ]
 
 [tool.uv]
