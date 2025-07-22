@@ -1,5 +1,4 @@
 from typing import List, Tuple, Optional
-import polars as pl
 
 class KinematicModel:
     a1: float
@@ -102,7 +101,7 @@ class Robot:
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float, float]],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
-        ] = None
+        ] = None,
     ) -> List[Tuple[float, float, float, float, float, float]]:
         """
         Computes the inverse kinematics for a given pose.
@@ -115,22 +114,26 @@ class Robot:
 
     def batch_inverse(
         self,
-        poses: pl.DataFrame,
-    ) -> pl.DataFrame:
+        poses: List[
+            Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]
+        ],
+    ) -> List[List[Tuple[float, float, float, float, float, float]]]:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
-        :param poses: DataFrame containing desired poses.
-        :return: DataFrame containing the computed joint configurations.
+        :param poses: List of poses, each containing position and quaternion tuples.
+        :return: List of lists containing all possible joint configurations for each pose.
         """
         ...
 
-    def batch_forward(self, joints: pl.DataFrame) -> pl.DataFrame:
+    def batch_forward(
+        self, joints: List[Tuple[float, float, float, float, float, float]]
+    ) -> List[Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]]:
         """
         Computes the forward kinematics for multiple sets of joint angles in batch mode.
 
-        :param joints: DataFrame containing joint configurations.
-        :return: DataFrame containing the computed poses.
+        :param joints: List of joint configurations (6 joint angles each).
+        :return: List of poses, each containing position and quaternion tuples.
         """
         ...
 

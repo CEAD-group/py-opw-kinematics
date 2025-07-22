@@ -83,45 +83,63 @@ def test_robot_forward_kinematics(
 def test_batch_forward_random(example_robot):
     robot = example_robot
 
-    # Generate random joint angles within typical ranges
-    num_samples = 50
-    np.random.seed(42)
-    joint_data = {
-        "J1": np.random.uniform(-180, 180, num_samples),
-        "J2": np.random.uniform(-90, 90, num_samples),
-        "J3": np.random.uniform(-180, 180, num_samples),
-        "J4": np.random.uniform(-180, 180, num_samples),
-        "J5": np.random.uniform(-90, 90, num_samples),
-        "J6": np.random.uniform(-180, 180, num_samples),
-    }
-    joints_df = pl.DataFrame(joint_data)
+    # Create test joint configurations as list of tuples
+    test_joints = [
+        [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01],
+        [-116.97, -85.69, 16.82, -63.5, -39.63, 192.76],
+        [-128.14, -86.43, 13.04, -59.66, -40.66, 201.57],
+    ]
 
-    # Use batch_forward to compute positions and orientations
-    result_df = robot.batch_forward(joints_df)
+    # Use batch_forward to compute poses
+    batch_poses = robot.batch_forward(test_joints)
 
-    # Verify that the output DataFrame has the expected length
-    assert len(result_df) == num_samples, "Mismatch in number of samples"
+    # Verify that we get poses for each joint configuration
+    assert len(batch_poses) == len(test_joints), (
+        "Mismatch in number of joint configurations"
+    )
+
+    # Check that each result is a valid pose
+    for i, pose in enumerate(batch_poses):
+        assert len(pose) == 2, f"Pose {i} should have position and orientation"
+        assert len(pose[0]) == 3, f"Position {i} should have 3 components"
+        assert len(pose[1]) == 4, f"Orientation {i} should have 4 quaternion components"
+
+        # Verify by comparing with individual forward kinematics
+        individual_pose = robot.forward(test_joints[i])
+        assert np.allclose(pose[0], individual_pose[0], atol=1e-10), (
+            f"Position mismatch for joint config {i}"
+        )
+        assert np.allclose(pose[1], individual_pose[1], atol=1e-10), (
+            f"Orientation mismatch for joint config {i}"
+        )
 
 
 def test_batch_inverse_random(example_robot):
     robot = example_robot
 
-    # Generate random positions and orientations
-    num_samples = 50
-    np.random.seed(42)
-    pose_data = {
-        "X": np.random.uniform(1500, 2500, num_samples),
-        "Y": np.random.uniform(-1000, 1000, num_samples),
-        "Z": np.random.uniform(1000, 2500, num_samples),
-        "A": np.random.uniform(-1, 1, num_samples),
-        "B": np.random.uniform(-1, 1, num_samples),
-        "C": np.random.uniform(-1, 1, num_samples),
-        "D": np.random.uniform(-1, 1, num_samples),
-    }
-    poses_df = pl.DataFrame(pose_data)
+    # Create test poses as list of tuples
+    test_poses = [
+        ([0.2, -0.3, 0.9], [0.8518, 0.13766, -0.46472, -0.19852]),
+        ([0.3, -0.3, 0.9], [0.8518, 0.13766, -0.46472, -0.19852]),
+        ([0.4, -0.3, 0.9], [0.8518, 0.13766, -0.46472, -0.19852]),
+    ]
 
     # Use batch_inverse to compute joint angles
-    result_df = robot.batch_inverse(poses_df)
+    batch_solutions = robot.batch_inverse(test_poses)
 
-    # Verify that the output DataFrame has the expected length
-    assert len(result_df) <= num_samples, "Mismatch in number of samples"
+    # Verify that we get solutions for each pose
+    assert len(batch_solutions) == len(test_poses), "Mismatch in number of poses"
+
+    # Check that each pose has solutions
+    for i, solutions in enumerate(batch_solutions):
+        assert len(solutions) > 0, f"No solutions found for pose {i}"
+
+        # Verify solutions by forward kinematics
+        for solution in solutions:
+            computed_pose = robot.forward(solution)
+            original_pose = test_poses[i]
+
+            # Check position with tolerance
+            assert np.allclose(computed_pose[0], original_pose[0], atol=1e-6), (
+                f"Position mismatch for pose {i}"
+            )
