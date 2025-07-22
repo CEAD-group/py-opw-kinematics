@@ -1091,6 +1091,10 @@ dependencies = [
 dev = [
     { name = "jupyter" },
 ]
+test = [
+    { name = "mypy" },
+    { name = "pytest" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1106,10 +1110,12 @@ dev = [
 requires-dist = [
     { name = "jupyter", marker = "extra == 'dev'" },
     { name = "maturin", specifier = ">=1.7.4" },
+    { name = "mypy", marker = "extra == 'test'" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "polars", extras = ["numpy", "pyarrow"], specifier = ">=1.31.0" },
+    { name = "pytest", marker = "extra == 'test'" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "test"]
 
 [package.metadata.requires-dev]
 dev = [
