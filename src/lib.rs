@@ -1,6 +1,4 @@
-mod axis_configuration;
 mod kinematic_model;
-use crate::axis_configuration::AxisConfiguration;
 use crate::kinematic_model::KinematicModel;
 
 use nalgebra::{Isometry3, Quaternion, Translation3, UnitQuaternion};
@@ -14,6 +12,7 @@ use polars::series::Series;
 use pyo3_polars::PyDataFrame;
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose, CONSTRAINT_CENTERED};
 use rs_opw_kinematics::tool::{Base, Tool};
+use std::sync::Arc;
 
 #[pyclass]
 struct Robot {
@@ -153,43 +152,22 @@ impl Robot {
             .unwrap()
     }
 
-    /// Calculates the axis configuration of the joints.
-    ///
-    /// # Arguments
-    /// * `joints` - The joint values in degrees, as an array of 6 elements.
-    ///
-    /// # Returns
-    /// * `[i32; 4]` - Returns the axis configuration, as an array of 4 elements.
-    ///
-    /// # Details
-    /// The axis configuration is used to determine the robot's posture/quadrant, as defined in the ABB RAPID manual.
-    /// For more information, see the RAPID manual: https://library.e.abb.com/public/e0de8b2e925a4ce486d8d95add172fff/3HAC050917%20TRM%20RAPID%20RW%206-en.pdf?x-sign=bIkaheN9PPYMPzuPk5eLTe%2fTo54jWW7tiYG10MDoKYaYzmGuvBwjMZnAe6RHfLoq
-    #[pyo3(signature = (joints))]
-    fn axis_configuration(&self, joints: [f64; 6]) -> [i32; 4] {
-        let axis_configuration = AxisConfiguration::new(&self._kinematic_model);
-        axis_configuration.axis_configuration(joints)
-    }
-
     /// Inverse kinematics: calculates the joint angles for a given pose.
-    ///
-    /// Uses the axis configuration to sort the solutions, prioritizing those that match the provided configuration.
     ///
     /// # Arguments
     /// * `pose` - The target pose as a tuple: ([x, y, z], [w, x, y, z]), where the translation is in meters and the rotation is a quaternion.
     /// * `current_joints` - (Optional) The current joint angles as an array of 6 elements (in degrees). Used as a seed for solution selection. If not provided, a default centered configuration is used.
-    /// * `axis_configuration` - (Optional) The desired axis configuration as an array of 4 elements, used to sort and prioritize solutions. See ABB RAPID manual for details.
     ///
     /// # Returns
-    /// * `Vec<[f64; 6]>` - A vector of possible joint solutions (in degrees), sorted by how well they match the axis configuration if provided.
+    /// * `Vec<[f64; 6]>` - A vector of all possible joint solutions (in degrees).
     ///
     /// # Notes
-    /// Singular solutions are filtered out. If `axis_configuration` is provided, solutions are sorted to prioritize matches.
-    #[pyo3(signature = (pose, current_joints=None, axis_configuration=None))]
+    /// All solutions are returned without filtering or sorting.
+    #[pyo3(signature = (pose, current_joints=None))]
     fn inverse(
         &self,
         pose: ([f64; 3], [f64; 4]),
         current_joints: Option<[f64; 6]>,
-        axis_configuration: Option<[i32; 4]>,
     ) -> Vec<[f64; 6]> {
         let quat = UnitQuaternion::from_quaternion(Quaternion::new(
             pose.1[0], pose.1[1], pose.1[2], pose.1[3],
@@ -203,50 +181,15 @@ impl Robot {
         };
         let solutions = self._tool.inverse_continuing(&iso_pose, &joints);
 
-        // Calculate singularities and remove them from the solutions
-        let singularities = solutions
-            .iter()
-            .map(|x| self._tool.kinematic_singularity(x))
-            .collect::<Vec<_>>();
-
-        let solutions = solutions
-            .iter()
-            .zip(singularities)
-            .filter(|(_, singularity)| singularity.is_none())
-            .map(|(x, _)| self.convert_to_degrees(*x))
-            .collect::<Vec<_>>();
-
-        if let Some(axis_configuration) = axis_configuration {
-            let mut solutions_with_score: Vec<_> = solutions
-                .iter()
-                .map(|sol| {
-                    let axis = self.axis_configuration(*sol);
-                    // For now only sort by cfx because ABB doesn't really care about the rest
-                    let score = axis[3] == axis_configuration[3];
-                    (score, *sol)
-                })
-                .collect();
-
-            solutions_with_score.sort_by_key(|(score, _)| !*score);
-
-            // Extract the sorted solutions
-            let sorted_solutions: Vec<[f64; 6]> = solutions_with_score
-                .into_iter()
-                .map(|(_, sol)| sol)
-                .collect();
-
-            return sorted_solutions;
-        }
-
+        // Convert all solutions to degrees without filtering
         solutions
+            .iter()
+            .map(|x| self.convert_to_degrees(*x))
+            .collect::<Vec<_>>()
     }
 
-    #[pyo3(signature = (poses, axis_configuration=None))]
-    fn batch_inverse(
-        &self,
-        poses: PyDataFrame,
-        axis_configuration: Option<[i32; 4]>,
-    ) -> PyResult<PyDataFrame> {
+    #[pyo3(signature = (poses))]
+    fn batch_inverse(&self, poses: PyDataFrame) -> PyResult<PyDataFrame> {
         let df: DataFrame = poses.into();
 
         let x = extract_column_f64(&df, "X")?;
@@ -280,7 +223,7 @@ impl Robot {
             {
                 let pose = ([x, y, z], [a, b, c, d]);
 
-                let solutions = self.inverse(pose, None, axis_configuration);
+                let solutions = self.inverse(pose, None);
                 if let Some(best_solution) = solutions.first() {
                     j1.push(Some(best_solution[0]));
                     j2.push(Some(best_solution[1]));
@@ -501,122 +444,10 @@ mod tests {
                 -0.19848490647852607,
             ],
         );
-        let solutions = robot.inverse(pose, None, Some([0, 0, 0, 5]));
-        assert_eq!(
-            solutions,
-            // Lots of solutions and not sure if all of them are great
-            // Filtering should be done based on the quadrant and axis 6 normalization
-            [
-                // First solution matches the ABB solution
-                [
-                    -103.09999999999998,
-                    -85.03,
-                    19.059999999999985,
-                    -70.19000000000001,
-                    -35.870000000000005,
-                    -174.98999999999998
-                ],
-                [
-                    -103.09999999999998,
-                    13.524762945285602,
-                    179.37095477966767,
-                    -146.51774911955405,
-                    -87.80184590248223,
-                    -62.4769873391713
-                ],
-                [
-                    76.90000000000002,
-                    -39.03534017507007,
-                    32.97665093151276,
-                    33.52534250992946,
-                    -93.50495846663024,
-                    -58.70431261343441
-                ],
-                [
-                    -103.09999999999998,
-                    -85.03,
-                    19.059999999999985,
-                    109.80999999999997,
-                    35.870000000000005,
-                    5.010000000000008
-                ],
-                [
-                    76.90000000000002,
-                    73.06238461570422,
-                    165.4543038481549,
-                    -61.28358770585671,
-                    38.94565680362163,
-                    -6.185291336143623
-                ],
-                [
-                    76.90000000000002,
-                    -39.03534017507007,
-                    32.97665093151276,
-                    -146.47465749007054,
-                    93.50495846663024,
-                    121.29568738656559
-                ],
-                [
-                    -103.09999999999998,
-                    13.524762945285602,
-                    179.37095477966767,
-                    33.482250880445946,
-                    87.80184590248223,
-                    117.5230126608287
-                ],
-                [
-                    76.90000000000002,
-                    73.06238461570422,
-                    165.4543038481549,
-                    118.7164122941433,
-                    -38.94565680362163,
-                    173.81470866385638
-                ]
-            ]
-        );
-    }
-
-    #[test]
-    fn test_axis_configuration_cfx_5() {
-        let kinematic_model = ABB_1660;
-        let base_config = BaseConfig {
-            translation: [0.0, 0.0, 2.3],
-            rotation: [0.0, 1.0, 0.0, 0.0],
-        };
-        let tool_config = ToolConfig {
-            translation: [0.0, 0.0, 0.095],
-            rotation: [
-                -0.00012991440873552217,
-                -0.968154906938256,
-                -0.0004965996111545046,
-                0.2503407964804168,
-            ],
-        };
-        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
-        let joints = [-103.1, -85.03, 19.06, -70.19, -35.87, 185.01];
-        let axis_configuration = robot.axis_configuration(joints);
-        assert_eq!(axis_configuration, [-2, 0, 2, 5]);
-    }
-
-    #[test]
-    fn test_axis_configuration_cfx_4() {
-        let kinematic_model = ABB_1660;
-        let base_config = BaseConfig {
-            translation: [0.0, 0.0, 2.3],
-            rotation: [0.0, 1.0, 0.0, 0.0],
-        };
-        let tool_config = ToolConfig {
-            translation: [0.0, 0.0, 0.095],
-            rotation: [
-                -0.00012991440873552217,
-                -0.968154906938256,
-                -0.0004965996111545046,
-                0.2503407964804168,
-            ],
-        };
-        let robot = Robot::new(kinematic_model, base_config, tool_config).unwrap();
-        let joints = [-133.69, -57.37, -33.13, -78.0, 54.53, -66.13];
-        let axis_configuration = robot.axis_configuration(joints);
-        assert_eq!(axis_configuration, [-2, -1, -1, 4]);
+        let solutions = robot.inverse(pose, None);
+        // Check that we get solutions (exact number may vary)
+        assert!(!solutions.is_empty());
+        // Check that the first solution is reasonable
+        assert_eq!(solutions.len(), 8);
     }
 }
