@@ -1,7 +1,6 @@
 from py_opw_kinematics import Robot, KinematicModel, BaseConfig, ToolConfig
 import numpy as np
 import pytest
-import polars as pl
 
 
 @pytest.fixture
