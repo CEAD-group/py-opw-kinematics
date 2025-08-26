@@ -15,8 +15,9 @@ classifiers = [
 ]
 dependencies = [
     "maturin>=1.7.4",
-    "polars[pyarrow,numpy]>=1.9.0",
-    "numpy>=1.26.4", 
+    "polars[pyarrow,numpy]>=1.22.0,!=1.32.*",
+    "numpy>=1.26.4",
+    "jupyter>=1.1.1",
 ]
 
 [project.optional-dependencies]

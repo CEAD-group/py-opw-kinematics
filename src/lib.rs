@@ -228,12 +228,12 @@ impl Robot {
 
         // Create Series with optional values to allow Nulls
         let df_result = DataFrame::new(vec![
-            Series::new("J1".into(), j1),
-            Series::new("J2".into(), j2),
-            Series::new("J3".into(), j3),
-            Series::new("J4".into(), j4),
-            Series::new("J5".into(), j5),
-            Series::new("J6".into(), j6),
+            Series::new("J1".into(), j1).into(),
+            Series::new("J2".into(), j2).into(),
+            Series::new("J3".into(), j3).into(),
+            Series::new("J4".into(), j4).into(),
+            Series::new("J5".into(), j5).into(),
+            Series::new("J6".into(), j6).into(),
         ])
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
         Ok(PyDataFrame(df_result))
@@ -292,12 +292,12 @@ impl Robot {
 
         // Create Series with optional values to allow Nulls
         let df_result = DataFrame::new(vec![
-            Series::new("X".into(), x),
-            Series::new("Y".into(), y),
-            Series::new("Z".into(), z),
-            Series::new("A".into(), a),
-            Series::new("B".into(), b),
-            Series::new("C".into(), c),
+            Series::new("X".into(), x).into(),
+            Series::new("Y".into(), y).into(),
+            Series::new("Z".into(), z).into(),
+            Series::new("A".into(), a).into(),
+            Series::new("B".into(), b).into(),
+            Series::new("C".into(), c).into(),
         ])
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
         Ok(PyDataFrame(df_result))
