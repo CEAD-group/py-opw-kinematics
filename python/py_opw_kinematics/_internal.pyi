@@ -1,5 +1,6 @@
 from typing import List, Tuple, Literal, Optional
-import polars as pl
+import numpy as np
+import numpy.typing as npt
 
 EulerSequence = Literal[
     "XYX", "XYZ", "XZX", "XZY", "YXY", "YXZ", "YZX", "YZY", "ZXY", "ZXZ", "ZYX", "ZYZ"
@@ -134,6 +135,9 @@ class KinematicModel:
         ...
 
 class Robot:
+    ee_rotation: Tuple[float, float, float]
+    ee_translation: Tuple[float, float, float]
+
     def __init__(
         self,
         kinematic_model: KinematicModel,
@@ -148,6 +152,12 @@ class Robot:
         :param euler_convention: Euler convention used for end-effector rotation.
         :param ee_rotation: Initial rotation of the end-effector.
         :param ee_translation: Initial translation of the end-effector.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Robot instance.
         """
         ...
 
@@ -180,26 +190,28 @@ class Robot:
 
     def batch_inverse(
         self,
-        poses: pl.DataFrame,
+        poses: npt.NDArray[np.float64],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
-    ) -> pl.DataFrame:
+    ) -> npt.NDArray[np.float64]:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
-        :param poses: DataFrame containing desired poses.
+        :param poses: NumPy array of shape (n, 6) with columns [X, Y, Z, A, B, C].
         :param current_joints: Current joint configuration (optional).
-        :return: DataFrame containing the computed joint configurations.
+        :return: NumPy array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6].
         """
         ...
 
-    def batch_forward(self, joints: pl.DataFrame) -> pl.DataFrame:
+    def batch_forward(
+        self, joints: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
         """
         Computes the forward kinematics for multiple sets of joint angles in batch mode.
 
-        :param joints: DataFrame containing joint configurations.
-        :return: DataFrame containing the computed poses.
+        :param joints: NumPy array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6].
+        :return: NumPy array of shape (n, 6) with columns [X, Y, Z, A, B, C].
         """
         ...
 

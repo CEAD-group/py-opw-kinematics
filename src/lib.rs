@@ -4,14 +4,10 @@ use crate::euler::EulerConvention;
 use crate::kinematic_model::KinematicModel;
 
 use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use polars::frame::DataFrame;
-use polars::prelude::*;
-use polars::series::Series;
-
-use pyo3_polars::PyDataFrame;
+use numpy::ndarray::Array2;
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 
@@ -160,147 +156,90 @@ impl Robot {
         solutions
     }
 
+    /// Batch inverse kinematics using NumPy arrays.
+    /// Input: poses array of shape (n, 6) with columns [X, Y, Z, A, B, C]
+    /// Output: joints array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6]
+    /// Returns NaN for rows where no solution is found.
     #[pyo3(signature = (poses, current_joints=None))]
-    fn batch_inverse(
+    fn batch_inverse<'py>(
         &self,
-        poses: PyDataFrame,
+        py: Python<'py>,
+        poses: PyReadonlyArray2<'py, f64>,
         mut current_joints: Option<[f64; 6]>,
-    ) -> PyResult<PyDataFrame> {
-        let df: DataFrame = poses.into();
+    ) -> PyResult<Py<PyArray2<f64>>> {
+        let poses_array = poses.as_array();
+        let n = poses_array.nrows();
 
-        let x = extract_column_f64(&df, "X")?;
-        let y = extract_column_f64(&df, "Y")?;
-        let z = extract_column_f64(&df, "Z")?;
-        let a = extract_column_f64(&df, "A")?;
-        let b = extract_column_f64(&df, "B")?;
-        let c = extract_column_f64(&df, "C")?;
+        let mut results: Vec<f64> = Vec::with_capacity(n * 6);
 
-        // Use Vec<Option<f64>> to allow for None (Null) values
-        let mut j1: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut j2: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut j3: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut j4: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut j5: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut j6: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        for i in 0..n {
+            let row = poses_array.row(i);
 
-        for i in 0..df.height() {
-            // Safely extract pose components, handling missing values
-            let x_i = x.get(i);
-            let y_i = y.get(i);
-            let z_i = z.get(i);
-            let a_i = a.get(i);
-            let b_i = b.get(i);
-            let c_i = c.get(i);
+            // Check for NaN values in input (treat as missing)
+            if row.iter().any(|v| v.is_nan()) {
+                results.extend_from_slice(&[f64::NAN; 6]);
+                continue;
+            }
 
-            if let (Some(x), Some(y), Some(z), Some(a), Some(b), Some(c)) =
-                (x_i, y_i, z_i, a_i, b_i, c_i)
-            {
-                let pose = ([x, y, z], [a, b, c]);
+            let pose = ([row[0], row[1], row[2]], [row[3], row[4], row[5]]);
 
-                let solutions = self.inverse(pose, current_joints);
-                if let Some(best_solution) = solutions.first() {
-                    j1.push(Some(best_solution[0]));
-                    j2.push(Some(best_solution[1]));
-                    j3.push(Some(best_solution[2]));
-                    j4.push(Some(best_solution[3]));
-                    j5.push(Some(best_solution[4]));
-                    j6.push(Some(best_solution[5]));
-                    current_joints = Some(*best_solution);
-                } else {
-                    // No solution found, push None values
-                    j1.push(None);
-                    j2.push(None);
-                    j3.push(None);
-                    j4.push(None);
-                    j5.push(None);
-                    j6.push(None);
-                }
+            let solutions = self.inverse(pose, current_joints);
+            if let Some(best_solution) = solutions.first() {
+                results.extend_from_slice(best_solution);
+                current_joints = Some(*best_solution);
             } else {
-                // Missing pose components, push None values
-                j1.push(None);
-                j2.push(None);
-                j3.push(None);
-                j4.push(None);
-                j5.push(None);
-                j6.push(None);
+                // No solution found
+                results.extend_from_slice(&[f64::NAN; 6]);
             }
         }
 
-        // Create Series with optional values to allow Nulls
-        let df_result = DataFrame::new(vec![
-            Series::new("J1".into(), j1).into(),
-            Series::new("J2".into(), j2).into(),
-            Series::new("J3".into(), j3).into(),
-            Series::new("J4".into(), j4).into(),
-            Series::new("J5".into(), j5).into(),
-            Series::new("J6".into(), j6).into(),
-        ])
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        Ok(PyDataFrame(df_result))
+        // Convert flat Vec to 2D array (n, 6)
+        let result_array = Array2::from_shape_vec((n, 6), results)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
+
+        Ok(result_array.into_pyarray(py).into())
     }
 
-    #[pyo3(signature = (joints))]
-    fn batch_forward(&self, joints: PyDataFrame) -> PyResult<PyDataFrame> {
-        let df: DataFrame = joints.into();
+    /// Batch forward kinematics using NumPy arrays.
+    /// Input: joints array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6]
+    /// Output: poses array of shape (n, 6) with columns [X, Y, Z, A, B, C]
+    /// Returns NaN for rows with NaN input values.
+    #[pyo3(signature = (joints,))]
+    fn batch_forward<'py>(
+        &self,
+        py: Python<'py>,
+        joints: PyReadonlyArray2<'py, f64>,
+    ) -> PyResult<Py<PyArray2<f64>>> {
+        let joints_array = joints.as_array();
+        let n = joints_array.nrows();
 
-        let j1 = extract_column_f64(&df, "J1")?;
-        let j2 = extract_column_f64(&df, "J2")?;
-        let j3 = extract_column_f64(&df, "J3")?;
-        let j4 = extract_column_f64(&df, "J4")?;
-        let j5 = extract_column_f64(&df, "J5")?;
-        let j6 = extract_column_f64(&df, "J6")?;
+        let mut results: Vec<f64> = Vec::with_capacity(n * 6);
 
-        // Use Vec<Option<f64>> to allow for None (Null) values
-        let mut x: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut y: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut z: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut a: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut b: Vec<Option<f64>> = Vec::with_capacity(df.height());
-        let mut c: Vec<Option<f64>> = Vec::with_capacity(df.height());
+        for i in 0..n {
+            let row = joints_array.row(i);
 
-        for i in 0..df.height() {
-            // Safely extract joint values, handling missing values
-            let j1_i = j1.get(i);
-            let j2_i = j2.get(i);
-            let j3_i = j3.get(i);
-            let j4_i = j4.get(i);
-            let j5_i = j5.get(i);
-            let j6_i = j6.get(i);
-
-            if let (Some(j1), Some(j2), Some(j3), Some(j4), Some(j5), Some(j6)) =
-                (j1_i, j2_i, j3_i, j4_i, j5_i, j6_i)
-            {
-                let joints_array = [j1, j2, j3, j4, j5, j6];
-                let (translation, rotation) = self.forward(joints_array);
-
-                x.push(Some(translation[0]));
-                y.push(Some(translation[1]));
-                z.push(Some(translation[2]));
-                a.push(Some(rotation[0]));
-                b.push(Some(rotation[1]));
-                c.push(Some(rotation[2]));
-            } else {
-                // Missing joint values, push None values
-                x.push(None);
-                y.push(None);
-                z.push(None);
-                a.push(None);
-                b.push(None);
-                c.push(None);
+            // Check for NaN values in input (treat as missing)
+            if row.iter().any(|v| v.is_nan()) {
+                results.extend_from_slice(&[f64::NAN; 6]);
+                continue;
             }
+
+            let joints_input = [row[0], row[1], row[2], row[3], row[4], row[5]];
+            let (translation, rotation) = self.forward(joints_input);
+
+            results.push(translation[0]);
+            results.push(translation[1]);
+            results.push(translation[2]);
+            results.push(rotation[0]);
+            results.push(rotation[1]);
+            results.push(rotation[2]);
         }
 
-        // Create Series with optional values to allow Nulls
-        let df_result = DataFrame::new(vec![
-            Series::new("X".into(), x).into(),
-            Series::new("Y".into(), y).into(),
-            Series::new("Z".into(), z).into(),
-            Series::new("A".into(), a).into(),
-            Series::new("B".into(), b).into(),
-            Series::new("C".into(), c).into(),
-        ])
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
-        Ok(PyDataFrame(df_result))
+        // Convert flat Vec to 2D array (n, 6)
+        let result_array = Array2::from_shape_vec((n, 6), results)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
+
+        Ok(result_array.into_pyarray(py).into())
     }
 }
 
@@ -311,29 +250,4 @@ fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KinematicModel>()?;
     m.add_class::<Robot>()?;
     Ok(())
-}
-
-// Define a function that extracts a column, casting it to Float64Chunked.
-fn extract_column_f64(df: &DataFrame, column_name: &str) -> PyResult<Float64Chunked> {
-    let column = df.column(column_name).map_err(|e| {
-        PyErr::new::<PyValueError, _>(format!("Error extracting column '{}': {}", column_name, e))
-    })?;
-
-    // Attempt to cast the column to Float64 data type.
-    let casted_column = column.cast(&DataType::Float64).map_err(|e| {
-        PyErr::new::<PyValueError, _>(format!(
-            "Error casting column '{}' to f64: {}",
-            column_name, e
-        ))
-    })?;
-
-    // Convert the casted Series to Float64Chunked.
-    let chunked = casted_column.f64().map_err(|e| {
-        PyErr::new::<PyValueError, _>(format!(
-            "Error converting column '{}' to Float64Chunked: {}",
-            column_name, e
-        ))
-    })?;
-
-    Ok(chunked.clone()) // Return an owned clone to satisfy ownership requirements.
 }
