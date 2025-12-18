@@ -129,6 +129,154 @@ impl Robot {
         (translation.into(), rotation)
     }
 
+    /// Compute joint positions using forward kinematics chain
+    fn joint_positions(&self, mut joints: [f64; 6]) -> Vec<[f64; 3]> {
+        // Apply parallelogram constraint if needed
+        if self.has_parallelogram {
+            joints[2] += joints[1];
+        }
+        
+        // Convert degrees to radians if needed
+        if self.euler_convention.degrees {
+            joints.iter_mut().for_each(|x| *x = x.to_radians());
+        }
+
+        let params = &self._kinematic_model;
+        let mut positions: Vec<[f64; 3]> = Vec::new();
+        let mut t: nalgebra::Isometry3<f64> = nalgebra::Isometry3::identity();
+
+        // Apply flip_axes (sign corrections) to joint angles
+        let corrected_joints = [
+            joints[0] * if params.flip_axes[0] { -1.0 } else { 1.0 },   // J1 - removed hardcoded negation
+            joints[1] * if params.flip_axes[1] { -1.0 } else { 1.0 },
+            joints[2] * if params.flip_axes[2] { -1.0 } else { 1.0 },
+            joints[3] * if params.flip_axes[3] { -1.0 } else { 1.0 },
+            joints[4] * if params.flip_axes[4] { -1.0 } else { 1.0 },
+            joints[5] * if params.flip_axes[5] { -1.0 } else { 1.0 },
+        ];
+
+        // Base position
+        positions.push([0.0, 0.0, 0.0]);
+
+        // Joint 1: Translation along Z by c1, then rotation around Z
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c1);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), corrected_joints[0]);
+
+        // Joint 2: Translation by a1 along X, rotation around Y  
+        t *= nalgebra::Translation3::new(params.a1, 0.0, 0.0);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[1]);
+
+        // Joint 3: Translation by c2 along Z, rotation around Y
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c2);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[2]);
+
+        // Joint 4: Translation by a2 along X and b along Y, rotation around Z (inverted to match standard flip_axes)
+        t *= nalgebra::Translation3::new(params.a2, params.b, 0.0);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), corrected_joints[3]);
+
+        // Joint 5: Translation by c3 along Z, rotation around Y
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c3);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[4]);
+
+        // Joint 6: Translation by c4 along Z, rotation around Z (inverted to match standard flip_axes)
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c4);
+        positions.push(t.translation.vector.into());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), corrected_joints[5]);
+
+        // TCP: Apply end effector transformation
+        let combined_rotation = t.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
+        let final_translation = t.translation.vector + combined_rotation * self.ee_translation;
+        positions.push(final_translation.into());
+
+        positions
+    }
+
+    /// Calculate parallelogram P1 and P2 positions using actual robot geometry
+    fn parallelogram_positions(&self, joints: [f64; 6], link_length: f64, rest_angle: f64) -> Option<([f64; 3], [f64; 3])> {
+        if !self.has_parallelogram {
+            return None;
+        }
+
+        let positions = self.joint_positions(joints);
+        if positions.len() < 4 {
+            return None;
+        }
+
+        let j1_pos = Vector3::from(positions[1]);  // J1
+        let j2_pos = Vector3::from(positions[2]);  // J2
+        let j3_pos = Vector3::from(positions[3]);  // J3
+
+        // Parallelogram constraint parameters
+        let link_length = link_length; // Distance from P1 to J2 (and P2 to J3)
+
+        // Calculate the constraint angle: 95° + J2_angle + (J3_angle + 90°)
+        let j2_angle_deg = if self.euler_convention.degrees {
+            joints[1]
+        } else {
+            joints[1].to_degrees()
+        };
+        let j3_angle_deg = if self.euler_convention.degrees {
+            joints[2]
+        } else {
+            joints[2].to_degrees()
+        };
+        
+        let constraint_angle_deg = rest_angle + j2_angle_deg + (j3_angle_deg + 90.0);
+        let constraint_angle_rad = constraint_angle_deg.to_radians();
+
+        // Vector from J2 to J3
+        let j2_to_j3 = j3_pos - j2_pos;
+        let j2_to_j3_length = j2_to_j3.norm();
+
+        if j2_to_j3_length < 1e-6 {
+            return Some((j2_pos.into(), j3_pos.into()));
+        }
+
+        let j2_to_j3_normalized = j2_to_j3 / j2_to_j3_length;
+
+        // Vector from J1 to J2 (gives us reference direction)
+        let j1_to_j2 = j2_pos - j1_pos;
+        let j1_to_j2_length = j1_to_j2.norm();
+
+        let reference_dir = if j1_to_j2_length < 1e-6 {
+            Vector3::new(1.0, 0.0, 0.0) // Default reference
+        } else {
+            j1_to_j2 / j1_to_j2_length
+        };
+
+        // Calculate the normal to the plane containing J1, J2, J3
+        let cross_product = j1_to_j2.cross(&j2_to_j3);
+        let cross_length = cross_product.norm();
+
+        let plane_normal = if cross_length < 1e-6 {
+            Vector3::new(0.0, 0.0, 1.0) // Default to vertical
+        } else {
+            cross_product / cross_length
+        };
+
+        // Create coordinate system in the plane
+        let plane_x = j2_to_j3_normalized;
+        let plane_y = plane_normal.cross(&plane_x).normalize();
+
+        // Calculate P1 position based on the constraint angle
+        let p1_direction_x = link_length * constraint_angle_rad.cos();
+        let p1_direction_y = link_length * constraint_angle_rad.sin();
+
+        // Transform to world coordinates
+        let p1_offset = p1_direction_x * plane_x + p1_direction_y * plane_y;
+        let p1_pos = j2_pos + p1_offset;
+
+        // For a perfect parallelogram: P2 = P1 + (J3 - J2)
+        let p2_pos = p1_pos + j2_to_j3;
+
+        Some((p1_pos.into(), p2_pos.into()))
+    }
+
     #[pyo3(signature = (pose, current_joints=None))]
     fn inverse(
         &self,

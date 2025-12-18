@@ -300,6 +300,17 @@ class Robot:
         """
         ...
 
+    def joint_positions(
+        self, joints: Tuple[float, float, float, float, float, float]
+    ) -> List[Tuple[float, float, float]]:
+        """
+        Computes the 3D positions of all joints using forward kinematics.
+
+        :param joints: Joint angles of the robot.
+        :return: List of joint positions from base to end-effector: [base, J1, J2, J3, J4, J5, J6, TCP].
+        """
+        ...
+
     def inverse(
         self,
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
@@ -402,6 +413,21 @@ class Robot:
         :return: List of configuration strings corresponding to each solution.
         """
         ...
+
+    def parallelogram_positions(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        link_length: float,
+        rest_angle: float,
+    ) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
+        """
+        Calculate parallelogram P1 and P2 positions using actual robot geometry.
+
+        :param joints: Joint angles of the robot.
+        :return: Tuple of (P1_position, P2_position) if robot has parallelogram, None otherwise.
+        """
+        ...
+
     def analyze_configuration_full(
         self,
         joints: Tuple[float, float, float, float, float, float],
