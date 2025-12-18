@@ -1,11 +1,14 @@
 mod euler; // Add this line to import the new module
 mod kinematic_model; // Add this line to import the new module
+mod configuration; // Add configuration module
 use crate::euler::EulerConvention;
 use crate::kinematic_model::KinematicModel;
+use crate::configuration::{RobotConfiguration, ConfigurationSelector, RobotKinematicParams};
 
 use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 use polars::frame::DataFrame;
 use polars::prelude::*;
@@ -103,6 +106,11 @@ impl Robot {
     #[setter]
     fn set_ee_translation(&mut self, ee_translation: [f64; 3]) {
         self.ee_translation = ee_translation.into();
+    }
+
+    #[getter]
+    fn get_kinematic_model(&self) -> KinematicModel {
+        self._kinematic_model.clone()
     }
 
     /// Forward kinematics: calculates the pose for given joints
@@ -327,7 +335,209 @@ impl Robot {
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{}", e)))?;
         Ok(PyDataFrame(df_result))
     }
+
+    /// Analyze joint configurations and return configuration information
+    #[pyo3(signature = (pose, target_config=None))]
+    fn inverse_with_config(
+        &self,
+        pose: ([f64; 3], [f64; 3]),
+        target_config: Option<String>,
+    ) -> PyResult<(Vec<[f64; 6]>, Vec<String>, Option<([f64; 6], String, u8)>)> {
+        // Get all inverse kinematics solutions
+        let solutions = self.inverse(pose, None);
+        
+        if solutions.is_empty() {
+            return Ok((vec![], vec![], None));
+        }
+        
+        // Analyze configurations for all solutions
+        let selector = ConfigurationSelector::new_with_parallelogram(&solutions, self.has_parallelogram);
+        let configs = selector.get_all_configurations();
+        let config_strings: Vec<String> = configs.iter()
+            .map(|config| config.stat_tu_string.clone())
+            .collect();
+        
+        // Find best match if target configuration is specified
+        let best_match = if let Some(target_str) = target_config {
+            match RobotConfiguration::from_string(&target_str) {
+                Ok(target) => {
+                    selector.find_best_match(&target)
+                        .map(|(index, config, scores)| (solutions[index], config.stat_tu_string.clone(), scores.0))
+                }
+                Err(_) => None
+            }
+        } else {
+            None
+        };
+        
+        Ok((solutions, config_strings, best_match))
+    }
+    
+    /// Find the best inverse solution matching a specific configuration
+    #[pyo3(signature = (pose, target_config, current_joints=None))]
+    fn inverse_with_target_config(
+        &self,
+        pose: ([f64; 3], [f64; 3]),
+        target_config: String,
+        current_joints: Option<[f64; 6]>,
+    ) -> PyResult<Option<([f64; 6], String, u8)>> {
+        // Get all inverse kinematics solutions
+        let solutions = self.inverse(pose, current_joints);
+        
+        if solutions.is_empty() {
+            return Ok(None);
+        }
+        
+        // Parse target configuration
+        let target = match RobotConfiguration::from_string(&target_config) {
+            Ok(target) => target,
+            Err(e) => return Err(PyErr::new::<PyValueError, _>(format!("Invalid target configuration: {}", e))),
+        };
+        
+        // Find best matching solution
+        let selector = ConfigurationSelector::new_with_parallelogram(&solutions, self.has_parallelogram);
+        match selector.find_best_match(&target) {
+            Some((index, config, scores)) => {
+                Ok(Some((solutions[index], config.stat_tu_string.clone(), scores.0)))
+            }
+            None => Ok(None)
+        }
+    }
+    
+    /// Get configuration analysis for given joint values
+    fn analyze_configuration(&self, joints: [f64; 6]) -> String {
+        let config = RobotConfiguration::from_joints_with_parallelogram(joints, self.has_parallelogram);
+        config.stat_tu_string
+    }
+    
+    /// Compare multiple joint solutions and return their configurations
+    fn compare_configurations(&self, joint_solutions: Vec<[f64; 6]>) -> Vec<String> {
+        joint_solutions.iter()
+            .map(|joints| {
+                let config = RobotConfiguration::from_joints_with_parallelogram(*joints, self.has_parallelogram);
+                config.stat_tu_string
+            })
+            .collect()
+    }
+    
+    /// Analyze configuration with full STAT/TU information
+    #[pyo3(signature = (joints, include_turns=false))]   
+    fn analyze_configuration_full(&self, joints: [f64; 6], include_turns: bool) -> PyResult<(String, String, Option<String>)> {
+        let config = RobotConfiguration::from_joints_with_parallelogram(joints, self.has_parallelogram);
+        
+        let stat_tu_string = config.stat_tu_string.clone();
+        let stat_string = config.stat.to_binary_string();
+        let full_string = if include_turns {
+            Some(config.stat_tu_string.clone())
+        } else {
+            None
+        };
+        
+        Ok((stat_tu_string, stat_string, full_string))
+    }    /// Find solutions matching STAT bits (ignoring turn numbers)
+    fn find_stat_matches(&self, pose: ([f64; 3], [f64; 3]), stat_bits: u8) -> PyResult<Vec<([f64; 6], String, u8)>> {
+        // Get all inverse kinematics solutions
+        let solutions = self.inverse(pose, None);
+        
+        if solutions.is_empty() {
+            return Ok(vec![]);
+        }
+        
+        // Find STAT matches
+        let selector = ConfigurationSelector::new_with_parallelogram(&solutions, self.has_parallelogram);
+        let target_stat = crate::configuration::StatBits::from_bits(stat_bits);
+        let matches = selector.find_stat_matches(&target_stat);
+        
+        let results: Vec<([f64; 6], String, u8)> = matches.iter()
+            .map(|(index, config, score)| {
+                (solutions[*index], config.stat_tu_string.clone(), *score)
+            })
+            .collect();
+            
+        Ok(results)
+    }
+    
+    /// Create target configuration from STAT/TU bits  
+    fn create_stat_tu_target(&self, stat_bits: u8, tu_bits: u8) -> String {
+        let target = crate::configuration::TargetConfiguration::from_bits(stat_bits, tu_bits);
+        target.to_string()
+    }
+    
+    /// Get detailed configuration analysis for a solution
+    fn get_configuration_details(&self, joints: [f64; 6]) -> PyResult<(String, u8, String, u8, String)> {
+        let config = RobotConfiguration::from_joints_with_parallelogram(joints, self.has_parallelogram);
+        
+        let stat_tu_config = config.stat_tu_string;
+        let stat_bits = config.stat.to_bits();
+        let stat_binary = config.stat.to_binary_string();
+        let tu_bits = config.tu.to_bits();
+        let tu_binary = config.tu.to_binary_string();
+        
+        Ok((stat_tu_config, stat_bits, stat_binary, tu_bits, tu_binary))
+    }
+    
+    /// Get configuration analysis using geometric calculation
+    /// Uses robot-specific kinematic parameters for accurate shoulder classification
+    fn get_configuration_details_geometric(&self, joints: [f64; 6], robot_params: &PyRobotKinematicParams) -> PyResult<(String, u8, String, u8, String)> {
+        use crate::configuration::StatBits;
+        
+        // Use geometric calculation
+        let stat_bits = StatBits::from_joints_geometric(joints, &robot_params.params, self.has_parallelogram);
+        let tu_bits = crate::configuration::TurnBits::from_joints(joints);
+        
+        let config = RobotConfiguration {
+            stat: stat_bits,
+            tu: tu_bits,
+            joints,
+            stat_tu_string: format!("STAT={} TU={}", stat_bits.to_binary_string(), tu_bits.to_binary_string()),
+        };
+        
+        Ok((config.stat_tu_string, stat_bits.to_bits(), stat_bits.to_binary_string(), tu_bits.to_bits(), tu_bits.to_binary_string()))
+    }
 }
+
+/// Python wrapper for robot kinematic parameters
+/// Used for geometric overhead calculation in STAT bits
+#[pyclass(name = "RobotKinematicParams")]
+#[derive(Debug, Clone)]
+pub struct PyRobotKinematicParams {
+    pub params: RobotKinematicParams,
+}
+
+#[pymethods]
+impl PyRobotKinematicParams {
+    #[new]
+    #[pyo3(signature = (a1, a2, b, c1, c2, c3, c4))]
+    pub fn new(a1: f64, a2: f64, b: f64, c1: f64, c2: f64, c3: f64, c4: f64) -> Self {
+        Self {
+            params: RobotKinematicParams { a1, a2, b, c1, c2, c3, c4 }
+        }
+    }
+    
+    /// Create from KinematicModel
+    #[classmethod]
+    pub fn from_kinematic_model(_cls: &Bound<'_, PyType>, kinematic_model: &KinematicModel) -> Self {
+        Self {
+            params: RobotKinematicParams {
+                a1: kinematic_model.a1,
+                a2: kinematic_model.a2, 
+                b: kinematic_model.b,
+                c1: kinematic_model.c1,
+                c2: kinematic_model.c2,
+                c3: kinematic_model.c3,
+                c4: kinematic_model.c4,
+            }
+        }
+    }
+    
+    fn __repr__(&self) -> String {
+        format!("RobotKinematicParams(a1={}, a2={}, b={}, c1={}, c2={}, c3={}, c4={})",
+                self.params.a1, self.params.a2, self.params.b, 
+                self.params.c1, self.params.c2, self.params.c3, self.params.c4)
+    }
+}
+
+
 
 /// Module initialization for Python
 #[pymodule(name = "_internal")]
@@ -335,6 +545,7 @@ fn py_opw_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EulerConvention>()?;
     m.add_class::<KinematicModel>()?;
     m.add_class::<Robot>()?;
+    m.add_class::<PyRobotKinematicParams>()?;
     Ok(())
 }
 

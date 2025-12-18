@@ -262,6 +262,33 @@ class Robot:
         """
         ...
 
+    @property
+    def ee_rotation(self) -> Tuple[float, float, float]:
+        """
+        Gets the current end-effector rotation.
+
+        :return: End-effector rotation as (rx, ry, rz).
+        """
+        ...
+
+    @property
+    def ee_translation(self) -> Tuple[float, float, float]:
+        """
+        Gets the current end-effector translation.
+
+        :return: End-effector translation as (x, y, z).
+        """
+        ...
+
+    @property
+    def kinematic_model(self) -> KinematicModel:
+        """
+        Gets the kinematic model used by this robot.
+
+        :return: The kinematic model instance.
+        """
+        ...
+
     def forward(
         self, joints: Tuple[float, float, float, float, float, float]
     ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
@@ -314,4 +341,178 @@ class Robot:
         """
         ...
 
-__all__: List[str] = ["EulerConvention", "KinematicModel", "Robot"]
+    def inverse_with_config(
+        self,
+        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+        target_config: Optional[str] = None,
+    ) -> Tuple[
+        List[Tuple[float, float, float, float, float, float]],
+        List[str],
+        Optional[Tuple[Tuple[float, float, float, float, float, float], str, int]],
+    ]:
+        """
+        Computes inverse kinematics with configuration analysis and optional target matching.
+
+        :param pose: Desired pose (position and orientation) of the end-effector.
+        :param target_config: Optional target configuration string (e.g., "J3+ J5- OH+").
+        :return: Tuple of (joint_solutions, config_strings, best_match).
+                 best_match is (joints, config, score) if target_config provided, else None.
+        """
+        ...
+
+    def inverse_with_target_config(
+        self,
+        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+        target_config: str,
+        current_joints: Optional[
+            Tuple[float, float, float, float, float, float]
+        ] = None,
+    ) -> Optional[Tuple[Tuple[float, float, float, float, float, float], str, int]]:
+        """
+        Finds the best inverse kinematics solution matching a specific configuration.
+
+        :param pose: Desired pose (position and orientation) of the end-effector.
+        :param target_config: Target configuration string (e.g., "J3+ J5- OH+").
+        :param current_joints: Current joint configuration (optional, not yet used).
+        :return: Tuple of (joints, config_string, score) if match found, else None.
+                 score indicates how many criteria matched (0-3).
+        """
+        ...
+
+    def analyze_configuration(
+        self, joints: Tuple[float, float, float, float, float, float]
+    ) -> str:
+        """
+        Analyzes the configuration of given joint angles.
+
+        :param joints: Joint angles to analyze.
+        :return: Configuration string (e.g., "J3+ J5- OH+").
+                 J3+/J3- = elbow up/down, J5+/J5- = wrist normal/flipped,
+                 OH+/OH- = overhead/non-overhead.
+        """
+        ...
+
+    def compare_configurations(
+        self, joint_solutions: List[Tuple[float, float, float, float, float, float]]
+    ) -> List[str]:
+        """
+        Compares multiple joint solutions and returns their configuration strings.
+
+        :param joint_solutions: List of joint angle arrays to analyze.
+        :return: List of configuration strings corresponding to each solution.
+        """
+        ...
+    def analyze_configuration_full(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        include_turns: bool = False,
+    ) -> Tuple[str, str, Optional[str]]:
+        """
+        Analyze configuration with full STAT/TU information.
+
+        :param joints: Joint angles to analyze.
+        :param include_turns: Whether to include turn information in full string.
+        :return: Tuple of (stat_tu_string, stat_binary, full_string).
+        """
+        ...
+
+    def find_stat_matches(
+        self,
+        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+        stat_bits: int,
+    ) -> List[Tuple[Tuple[float, float, float, float, float, float], str, int]]:
+        """
+        Find solutions matching STAT bits (ignoring turn numbers).
+
+        :param pose: Desired pose (position and orientation) of the end-effector.
+        :param stat_bits: Target STAT bits (0-7).
+        :return: List of (joints, config_string, score) tuples.
+        """
+        ...
+
+    def create_stat_tu_target(self, stat_bits: int, tu_bits: int) -> str:
+        """
+        Create target configuration from STAT/TU bits.
+
+        :param stat_bits: STAT bits (0-7).
+        :param tu_bits: TU bits (0-63).
+        :return: Configuration string like "STAT=101 TU=000011".
+        """
+        ...
+
+    def get_configuration_details(
+        self, joints: Tuple[float, float, float, float, float, float]
+    ) -> Tuple[str, int, str, int, str]:
+        """
+        Get detailed configuration analysis for a solution.
+
+        :param joints: Joint angles to analyze.
+        :return: Tuple of (stat_tu_config, stat_bits, stat_binary, tu_bits, tu_binary).
+        """
+        ...
+
+    def get_configuration_details_geometric(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        robot_params: "RobotKinematicParams",
+    ) -> Tuple[str, int, str, int, str]:
+        """
+        Get configuration analysis using geometric calculation.
+        Uses robot-specific kinematic parameters for accurate shoulder classification.
+
+        :param joints: Joint angles to analyze.
+        :param robot_params: Robot kinematic parameters for geometric calculation.
+        :return: Tuple of (stat_tu_config, stat_bits, stat_binary, tu_bits, tu_binary).
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Robot instance.
+        """
+        ...
+
+class RobotKinematicParams:
+    """
+    Robot kinematic parameters for geometric overhead calculation in STAT bits.
+    Used for geometric calculation in configuration analysis.
+    """
+
+    def __init__(
+        self, a1: float, a2: float, b: float, c1: float, c2: float, c3: float, c4: float
+    ) -> None:
+        """
+        Initialize robot kinematic parameters.
+
+        :param a1: Link length 1 (shoulder to elbow).
+        :param a2: Link length 2 (elbow to wrist).
+        :param b: Base offset.
+        :param c1: Shoulder height offset.
+        :param c2, c3, c4: Wrist offsets.
+        """
+        ...
+
+    @classmethod
+    def from_kinematic_model(
+        cls, kinematic_model: KinematicModel
+    ) -> "RobotKinematicParams":
+        """
+        Create RobotKinematicParams from a KinematicModel.
+
+        :param kinematic_model: The kinematic model to extract parameters from.
+        :return: RobotKinematicParams instance.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the RobotKinematicParams instance.
+        """
+        ...
+
+__all__: List[str] = [
+    "EulerConvention",
+    "KinematicModel",
+    "Robot",
+    "RobotKinematicParams",
+]
