@@ -157,6 +157,13 @@ impl Robot {
             });
         }
 
+        // Optimized constraint checking: skip filtering if no constraints are defined
+        if self._kinematic_model.has_constraints {
+            solutions.retain(|solution| {
+                self._kinematic_model.joints_within_limits(solution, self.euler_convention.degrees)
+            });
+        }
+
         solutions
     }
 
@@ -271,14 +278,32 @@ impl Robot {
                 (j1_i, j2_i, j3_i, j4_i, j5_i, j6_i)
             {
                 let joints_array = [j1, j2, j3, j4, j5, j6];
-                let (translation, rotation) = self.forward(joints_array);
+                
+                // Optimized: only check constraints if they exist
+                let joints_valid = if self._kinematic_model.has_constraints {
+                    self._kinematic_model.joints_within_limits(&joints_array, self.euler_convention.degrees)
+                } else {
+                    true // No constraints means all joints are valid
+                };
+                
+                if joints_valid {
+                    let (translation, rotation) = self.forward(joints_array);
 
-                x.push(Some(translation[0]));
-                y.push(Some(translation[1]));
-                z.push(Some(translation[2]));
-                a.push(Some(rotation[0]));
-                b.push(Some(rotation[1]));
-                c.push(Some(rotation[2]));
+                    x.push(Some(translation[0]));
+                    y.push(Some(translation[1]));
+                    z.push(Some(translation[2]));
+                    a.push(Some(rotation[0]));
+                    b.push(Some(rotation[1]));
+                    c.push(Some(rotation[2]));
+                } else {
+                    // Joints outside limits, push None values
+                    x.push(None);
+                    y.push(None);
+                    z.push(None);
+                    a.push(None);
+                    b.push(None);
+                    c.push(None);
+                }
             } else {
                 // Missing joint values, push None values
                 x.push(None);

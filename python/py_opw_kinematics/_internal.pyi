@@ -95,6 +95,8 @@ class KinematicModel:
     offsets: Tuple[float, float, float, float, float, float]
     flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]]
     has_parallelogram: bool
+    has_constraints: bool
+    axis_limits: Optional[Tuple[Tuple[float, float], ...]]
 
     def __init__(
         self,
@@ -122,6 +124,7 @@ class KinematicModel:
             False,
         ),
         has_parallelogram: bool = False,
+        axis_limits: Optional[List[Tuple[float, float]]] = None,
     ) -> None:
         """
         Initializes a KinematicModel instance.
@@ -130,6 +133,58 @@ class KinematicModel:
         :param offsets: Joint offsets.
         :param flip_axes: Boolean flags for flipping axes.
         :param has_parallelogram: Indicates if the model has a parallelogram linkage.
+        :param axis_limits: Optional list of (min, max) limits for each axis.
+        ...
+
+    def set_axis_limits(self, limits: Optional[List[Tuple[float, float]]]) -> None:
+        """
+        Sets the axis limits for joint angles.
+
+        :param limits: Optional list of (min, max) limits for each axis.
+        """
+        ...
+
+    def set_absolute_constraint(
+        self, axis: int, min: float, max: float, degrees: bool = False
+    ) -> None:
+        """
+        Sets an absolute constraint for a specific axis.
+
+        :param axis: The axis index (0-5).
+        :param min: Minimum allowed value (in radians by default, degrees if degrees=True).
+        :param max: Maximum allowed value (in radians by default, degrees if degrees=True).
+        :param degrees: If True, min and max are in degrees; if False (default), in radians.
+        """
+        ...
+    def clear_axis_constraint(self, axis: int) -> None:
+        """
+        Clears the constraint for a specific axis.
+
+        :param axis: The axis index (0-5).
+        """
+        ...
+
+    def clear_all_constraints(self) -> None:
+        """
+        Clears all advanced constraints.
+        """
+        ...
+
+    def joints_within_limits_vec(
+        self, joints: List[float], degrees: Optional[bool] = None
+    ) -> bool:
+        """
+        Check if given joints satisfy all constraints (Python-friendly).
+
+        :param joints: List of 6 joint values.
+        :param degrees: Whether joint values are in degrees (default: True).
+        :return: True if all constraints are satisfied.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the KinematicModel instance.
         """
         ...
 
