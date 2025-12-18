@@ -97,6 +97,16 @@ class KinematicModel:
     has_parallelogram: bool
     has_constraints: bool
     axis_limits: Optional[Tuple[Tuple[float, float], ...]]
+    relative_constraints: Optional[List[Tuple[int, int, float, float]]]
+    """
+    Current relative constraints as (axis, reference_axis, min_offset, max_offset) tuples.
+    Values are always returned in radians regardless of how they were set.
+    """
+    sum_constraints: Optional[List[Tuple[int, int, float, float]]]
+    """
+    Current sum constraints as (axis, reference_axis, min_sum, max_sum) tuples.
+    Values are always returned in radians regardless of how they were set.
+    """
 
     def __init__(
         self,
@@ -125,6 +135,8 @@ class KinematicModel:
         ),
         has_parallelogram: bool = False,
         axis_limits: Optional[List[Tuple[float, float]]] = None,
+        relative_constraints: Optional[List[Tuple[int, int, float, float]]] = None,
+        sum_constraints: Optional[List[Tuple[int, int, float, float]]] = None,
     ) -> None:
         """
         Initializes a KinematicModel instance.
@@ -134,6 +146,11 @@ class KinematicModel:
         :param flip_axes: Boolean flags for flipping axes.
         :param has_parallelogram: Indicates if the model has a parallelogram linkage.
         :param axis_limits: Optional list of (min, max) limits for each axis.
+        :param relative_constraints: Optional list of relative constraints as (axis, reference_axis, min_offset, max_offset) tuples.
+                                   Constraint offsets are specified in degrees and converted to radians internally.
+        :param sum_constraints: Optional list of sum constraints as (axis, reference_axis, min_sum, max_sum) tuples.
+                               For parallelogram constraints like J2+J3. Values specified in degrees and converted to radians internally.
+        """
         ...
 
     def set_axis_limits(self, limits: Optional[List[Tuple[float, float]]]) -> None:
@@ -156,6 +173,45 @@ class KinematicModel:
         :param degrees: If True, min and max are in degrees; if False (default), in radians.
         """
         ...
+
+    def set_relative_constraint(
+        self,
+        axis: int,
+        reference_axis: int,
+        min_offset: float,
+        max_offset: float,
+        degrees: bool = False,
+    ) -> None:
+        """
+        Sets a relative constraint for a specific axis.
+
+        :param axis: The axis index to constrain (0-5).
+        :param reference_axis: The reference axis index (0-5).
+        :param min_offset: Minimum offset from reference axis (in radians by default, degrees if degrees=True).
+        :param max_offset: Maximum offset from reference axis (in radians by default, degrees if degrees=True).
+        :param degrees: If True, offsets are in degrees; if False (default), in radians.
+        """
+        ...
+
+    def set_sum_constraint(
+        self,
+        axis: int,
+        reference_axis: int,
+        min_sum: float,
+        max_sum: float,
+        degrees: bool = False,
+    ) -> None:
+        """
+        Sets a sum constraint for a specific axis (for parallelogram constraints).
+
+        :param axis: The axis index to constrain (0-5).
+        :param reference_axis: The reference axis index (0-5).
+        :param min_sum: Minimum sum of axis + reference_axis (in radians by default, degrees if degrees=True).
+        :param max_sum: Maximum sum of axis + reference_axis (in radians by default, degrees if degrees=True).
+        :param degrees: If True, values are in degrees; if False (default), in radians.
+        """
+        ...
+
     def clear_axis_constraint(self, axis: int) -> None:
         """
         Clears the constraint for a specific axis.
