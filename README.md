@@ -47,18 +47,21 @@ Single Operation Example
 from py_opw_kinematics import KinematicModel, Robot, EulerConvention
 import numpy as np
 
+# Define robot kinematic parameters
 kinematic_model = KinematicModel(
-    a1=400,
-    a2=-250,
-    b=0,
-    c1=830,
-    c2=1175,
-    c3=1444,
-    c4=230,
-    offsets=(0,0,0,0,0,0),
-    flip_axes=(True, False, True, True, False, True),
-    has_parallelogram=True,
+    a1=400,    # Base to shoulder distance
+    a2=-250,   # Shoulder offset  
+    b=0,       # Elbow offset
+    c1=830,    # Base height
+    c2=1175,   # Upper arm length
+    c3=1444,   # Forearm length
+    c4=230,    # Wrist length
+    offsets=(0,0,0,0,0,0),  # Joint angle offsets
+    flip_axes=(True, False, True, True, False, True),  # Axis directions
+    has_parallelogram=True,  # J2-J3 mechanical coupling
 )
+
+# Define rotation representation
 euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
 robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
 
@@ -72,8 +75,8 @@ for solution in robot.inverse((position, rotation)):
     print(f"Solution: {np.round(solution, 2)}")
 
 ```
-This example prints:
-    
+
+**Expected Output:**
 ```
 Position: [2042.49 -360.15 2255.  ], Rotation: [  0.   0. -10.]
 Solution: [ 10.   0. -90.  -0.   0.   0.]
@@ -81,6 +84,30 @@ Solution: [ 10.    90.76 -20.4   -0.    69.6    0.  ]
 Solution: [  10.    0.  -90. -180.    0.  180.]
 Solution: [  10.     90.76  -20.4  -180.    -69.6   180.  ]
 ```
+
+> **Multiple Solutions**: Most robot poses can be achieved in several ways. py-opw-kinematics finds all mathematically valid solutions, allowing you to choose the optimal one for your application.
+
+## Axis Limits and Constraints
+
+To limit solutions to achievable robot configurations, you can set joint angle limits and handle parallelogram constraints:
+
+```python
+# Set joint limits (in degrees)
+kinematic_model.set_constraints(
+    lower_limits=[-180, -150, -120, -180, -130, -360],
+    upper_limits=[180, 90, 70, 180, 130, 360]
+)
+
+# For parallelogram robots, set relative angle limits between J2 and J3
+kinematic_model.set_relative_constraint(-160, 160)  # J3 relative to J2
+```
+
+## Documentation
+
+- **[Getting Started Guide](docs/getting-started.md)** - Learn the basics step-by-step
+- **[Advanced Features](docs/advanced-features.md)** - Explore powerful capabilities 
+- **[API Reference](docs/api.md)** - Complete function documentation
+- **[Developer Guide](docs/developer-guide.md)** - Contributing and building
 
 ## Acknowledgements
 

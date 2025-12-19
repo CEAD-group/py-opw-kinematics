@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Animation Viewer - With Collision Shapes</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        // Optimize canvas performance for animations by setting willReadFrequently by default
+        (function () {
+            const originalGetContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function (type, options = {}) {
+                if (type === '2d') {
+                    options.willReadFrequently = true;
+                }
+                return originalGetContext.call(this, type, options);
+            };
+        })();
+    </script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .controls {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        select,
+        input[type="range"] {
+            padding: 6px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        select {
+            background: white;
+            cursor: pointer;
+        }
+
+        input[type="range"] {
+            width: 200px;
+        }
+
+        .status {
+            margin-left: auto;
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        #plotContainer {
+            height: 700px;
+            background: white;
+        }
+
+        .file-selector {
+            background: white;
+            padding: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .file-input {
+            margin-bottom: 10px;
+        }
+
+        .file-input input[type="file"] {
+            margin-left: 10px;
+        }
+
+        .visualization-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            padding: 10px 0;
+            border-top: 1px solid #dee2e6;
+            margin-top: 10px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin: 0;
+        }
+
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Robot Animation Viewer - With Collision Shapes</h1>
+            <p>Load and view robot trajectory animations with collision visualization</p>
+        </div>
+
+        <div class="file-selector">
+            <div class="file-input">
+                <label for="animationFile">Animation Data File:</label>
+                <input type="file" id="animationFile" accept=".json" />
+                <span class="help-text">(Select a JSON file containing animation data)</span>
+            </div>
+            <div id="fileError" class="error" style="display: none;"></div>
+        </div>
+
+        <div class="controls" id="controls" style="display: none;">
+            <div class="control-group">
+                <button id="playBtn" class="btn btn-primary">▶ Play</button>
+                <button id="resetBtn" class="btn btn-secondary">⏮ Reset</button>
+            </div>
+
+            <div class="control-group">
+                <label for="speedSelect">Speed:</label>
+                <select id="speedSelect">
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="progressSlider">Progress:</label>
+                <input type="range" id="progressSlider" min="0" max="100" value="0" step="1">
+                <span id="frameDisplay">Frame 0 / 0</span>
+            </div>
+
+            <div class="status">
+                <span id="animationStatus">Ready</span>
+            </div>
+
+            <div class="visualization-controls">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="showTcpFrame" checked>
+                    <label for="showTcpFrame">TCP Frame</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="showTrajectory" checked>
+                    <label for="showTrajectory">Trajectory</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="showParallelogram" checked>
+                    <label for="showParallelogram">Parallelogram</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="showCollisionShapes" checked>
+                    <label for="showCollisionShapes">Collision Shapes</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="proportionalAxes" checked>
+                    <label for="proportionalAxes">Proportional Axes</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="autoScale" checked>
+                    <label for="autoScale">Auto Scale</label>
+                </div>
+            </div>
+        </div>
+
+        <div id="plotContainer">
+            <div class="loading">
+                <p>Please select an animation data file to begin</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class RobotAnimationViewer {
+            constructor() {
+                this.animationData = null;
+                this.currentFrame = 0;
+                this.totalFrames = 0;
+                this.isPlaying = false;
+                this.animationRequestId = null;
+                this.speedSettings = [
+                    { duration: 1, label: '1ms per frame (Ultra Fast)' },
+                    { duration: 2, label: '2ms per frame (Super Fast)' },
+                    { duration: 5, label: '5ms per frame (Very Fast)' },
+                    { duration: 10, label: '10ms per frame (Fast)' },
+                    { duration: 20, label: '20ms per frame' },
+                    { duration: 50, label: '50ms per frame' },
+                    { duration: 100, label: '100ms per frame' },
+                    { duration: 200, label: '200ms per frame' },
+                    { duration: 500, label: '500ms per frame' },
+                    { duration: 1000, label: '1000ms per frame' },
+                    { duration: 2000, label: '2000ms per frame (Slow)' }
+                ];
+                this.currentSpeedIndex = 6; // Default to 100ms per frame
+
+                // Visualization options - will be read from checkboxes
+                this.fixedAxisRange = [-1.5, 1.5]; // Fixed axis range when not auto-scaling
+
+                this.initializeElements();
+
+                // Initialize states from checkbox values
+                this.showTcpFrame = this.elements.showTcpFrame.checked;
+                this.showTrajectory = this.elements.showTrajectory.checked;
+                this.showParallelogram = this.elements.showParallelogram.checked;
+                this.showCollisionShapes = this.elements.showCollisionShapes.checked;
+                this.proportionalAxes = this.elements.proportionalAxes.checked;
+                this.autoScale = this.elements.autoScale.checked;
+
+                this.setupEventListeners();
+                this.populateSpeedDropdown();
+            }
+
+            initializeElements() {
+                this.elements = {
+                    fileInput: document.getElementById('animationFile'),
+                    controls: document.getElementById('controls'),
+                    plotContainer: document.getElementById('plotContainer'),
+                    playBtn: document.getElementById('playBtn'),
+                    resetBtn: document.getElementById('resetBtn'),
+                    speedSelect: document.getElementById('speedSelect'),
+                    progressSlider: document.getElementById('progressSlider'),
+                    frameDisplay: document.getElementById('frameDisplay'),
+                    animationStatus: document.getElementById('animationStatus'),
+                    fileError: document.getElementById('fileError'),
+                    showTcpFrame: document.getElementById('showTcpFrame'),
+                    showTrajectory: document.getElementById('showTrajectory'),
+                    showParallelogram: document.getElementById('showParallelogram'),
+                    showCollisionShapes: document.getElementById('showCollisionShapes'),
+                    proportionalAxes: document.getElementById('proportionalAxes'),
+                    autoScale: document.getElementById('autoScale')
+                };
+            }
+
+            setupEventListeners() {
+                this.elements.fileInput.addEventListener('change', (e) => this.handleFileLoad(e));
+                this.elements.playBtn.addEventListener('click', () => this.togglePlay());
+                this.elements.resetBtn.addEventListener('click', () => this.resetAnimation());
+                this.elements.speedSelect.addEventListener('change', () => this.updateSpeed());
+                this.elements.progressSlider.addEventListener('input', (e) => this.seekToFrame(parseInt(e.target.value)));
+
+                // Visualization control listeners
+                this.elements.showTcpFrame.addEventListener('change', (e) => {
+                    this.showTcpFrame = e.target.checked;
+                    this.updateVisualization();
+                });
+                this.elements.showTrajectory.addEventListener('change', (e) => {
+                    this.showTrajectory = e.target.checked;
+                    this.updateVisualization();
+                });
+                this.elements.showParallelogram.addEventListener('change', (e) => {
+                    this.showParallelogram = e.target.checked;
+                    this.updateVisualization();
+                });
+                this.elements.showCollisionShapes.addEventListener('change', (e) => {
+                    this.showCollisionShapes = e.target.checked;
+                    this.updateVisualization();
+                });
+                this.elements.proportionalAxes.addEventListener('change', (e) => {
+                    this.proportionalAxes = e.target.checked;
+                    this.updateLayout();
+                });
+                this.elements.autoScale.addEventListener('change', (e) => {
+                    this.autoScale = e.target.checked;
+                    this.updateLayout();
+                });
+            }
+
+            populateSpeedDropdown() {
+                this.elements.speedSelect.innerHTML = '';
+                this.speedSettings.forEach((setting, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = setting.label;
+                    if (index === this.currentSpeedIndex) {
+                        option.selected = true;
+                    }
+                    this.elements.speedSelect.appendChild(option);
+                });
+            }
+
+            showError(message) {
+                this.elements.fileError.textContent = message;
+                this.elements.fileError.style.display = 'block';
+                setTimeout(() => {
+                    this.elements.fileError.style.display = 'none';
+                }, 5000);
+            }
+
+            async handleFileLoad(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                try {
+                    this.elements.animationStatus.textContent = 'Loading...';
+
+                    const text = await file.text();
+                    this.animationData = JSON.parse(text);
+
+                    if (!this.validateAnimationData(this.animationData)) {
+                        this.showError('Invalid animation data format. Please check the file structure.');
+                        return;
+                    }
+
+                    this.totalFrames = this.animationData.frames.length;
+                    this.currentFrame = 0;
+
+                    this.elements.progressSlider.max = this.totalFrames - 1;
+                    this.elements.progressSlider.value = 0;
+
+                    this.elements.controls.style.display = 'flex';
+                    this.updateFrameDisplay();
+                    this.createPlot();
+                    this.elements.animationStatus.textContent = 'Ready';
+
+                } catch (error) {
+                    console.error('Error loading file:', error);
+                    this.showError(`Error loading file: ${error.message}`);
+                }
+            }
+
+            validateAnimationData(data) {
+                return data &&
+                    data.frames &&
+                    Array.isArray(data.frames) &&
+                    data.frames.length > 0 &&
+                    data.frames[0].positions &&
+                    Array.isArray(data.frames[0].positions);
+            }
+
+            getCollisionShapeConfig() {
+                // Default collision shapes configuration if none provided
+                const defaultConfig = {
+                    cylinder: {
+                        type: "cylinder",
+                        from_joint: 1,
+                        to_joint: 2,
+                        radius: 0.05,
+                        color: "#FF6B6B",
+                        opacity: 0.6
+                    },
+                    box: {
+                        type: "box",
+                        from_joint: 2,
+                        to_joint: 3,
+                        size: [0.8, 0.08, 0.08], // [length_factor, width, height]
+                        color: "#4ECDC4",
+                        opacity: 0.6
+                    },
+                    sphere: {
+                        type: "sphere",
+                        at_joint: 4,
+                        radius: 0.06,
+                        color: "#FFE66D",
+                        opacity: 0.6
+                    }
+                };
+
+                // Use collision shapes from JSON if available, otherwise use defaults
+                if (this.animationData && this.animationData.metadata && this.animationData.metadata.collision_shapes) {
+                    return this.animationData.metadata.collision_shapes;
+                }
+                return defaultConfig;
+            }
+
+            createPlot() {
+                if (!this.animationData) return;
+
+                const firstFrame = this.animationData.frames[0];
+                const traces = this.createTraces(firstFrame);
+                const layout = this.createLayout();
+
+                const config = {
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false,
+                    modeBarButtonsToRemove: ['pan3d', 'lasso3d'],
+                    scrollZoom: true,
+                    // Optimize canvas performance for animations
+                    plotGlPixelRatio: 1,
+                    // Configure for frequent readbacks to suppress warning
+                    toImageButtonOptions: {
+                        format: 'png',
+                        filename: 'robot_animation',
+                        height: 500,
+                        width: 700,
+                        scale: 1
+                    }
+                };
+
+                Plotly.newPlot(this.elements.plotContainer, traces, layout, config);
+            }
+
+            createLayout() {
+                let axisRange = this.fixedAxisRange;
+
+                if (this.autoScale && this.animationData) {
+                    // Calculate bounds from all frames
+                    let minX = Infinity, maxX = -Infinity;
+                    let minY = Infinity, maxY = -Infinity;
+                    let minZ = Infinity, maxZ = -Infinity;
+
+                    this.animationData.frames.forEach(frame => {
+                        if (frame.positions) {
+                            frame.positions.forEach(pos => {
+                                minX = Math.min(minX, pos.x);
+                                maxX = Math.max(maxX, pos.x);
+                                minY = Math.min(minY, pos.y);
+                                maxY = Math.max(maxY, pos.y);
+                                minZ = Math.min(minZ, pos.z);
+                                maxZ = Math.max(maxZ, pos.z);
+                            });
+                        }
+                    });
+
+                    const padding = 0.1;
+                    let rangeX = [minX - padding, maxX + padding];
+                    let rangeY = [minY - padding, maxY + padding];
+                    let rangeZ = [minZ - padding, maxZ + padding];
+
+                    // Force true 1:1:1 proportions if enabled
+                    if (this.proportionalAxes) {
+                        const maxRange = Math.max(
+                            rangeX[1] - rangeX[0],
+                            rangeY[1] - rangeY[0],
+                            rangeZ[1] - rangeZ[0]
+                        );
+
+                        const centerX = (rangeX[0] + rangeX[1]) / 2;
+                        const centerY = (rangeY[0] + rangeY[1]) / 2;
+                        const centerZ = (rangeZ[0] + rangeZ[1]) / 2;
+
+                        const halfRange = maxRange / 2;
+                        rangeX = [centerX - halfRange, centerX + halfRange];
+                        rangeY = [centerY - halfRange, centerY + halfRange];
+                        rangeZ = [centerZ - halfRange, centerZ + halfRange];
+                    }
+
+                    return {
+                        title: {
+                            text: this.animationData.title || 'Robot Animation - Collision Shapes',
+                            font: { size: 18 }
+                        },
+                        scene: {
+                            xaxis: { title: 'X (m)', range: rangeX, showgrid: true, gridcolor: '#e0e0e0' },
+                            yaxis: { title: 'Y (m)', range: rangeY, showgrid: true, gridcolor: '#e0e0e0' },
+                            zaxis: { title: 'Z (m)', range: rangeZ, showgrid: true, gridcolor: '#e0e0e0' },
+                            camera: { eye: { x: 1.5, y: 1.5, z: 1.5 } },
+                            aspectmode: this.proportionalAxes ? 'manual' : 'auto',
+                            aspectratio: this.proportionalAxes ? { x: 1, y: 1, z: 1 } : undefined,
+                            bgcolor: '#f8f9fa'
+                        },
+                        showlegend: true,
+                        legend: { x: 0, y: 1 },
+                        margin: { l: 0, r: 0, b: 0, t: 40 }
+                    };
+                } else {
+                    return {
+                        title: {
+                            text: this.animationData.title || 'Robot Animation - Collision Shapes',
+                            font: { size: 18 }
+                        },
+                        scene: {
+                            xaxis: { title: 'X (m)', range: axisRange, showgrid: true, gridcolor: '#e0e0e0' },
+                            yaxis: { title: 'Y (m)', range: axisRange, showgrid: true, gridcolor: '#e0e0e0' },
+                            zaxis: { title: 'Z (m)', range: axisRange, showgrid: true, gridcolor: '#e0e0e0' },
+                            camera: { eye: { x: 1.5, y: 1.5, z: 1.5 } },
+                            aspectmode: this.proportionalAxes ? 'manual' : 'auto',
+                            aspectratio: this.proportionalAxes ? { x: 1, y: 1, z: 1 } : undefined,
+                            bgcolor: '#f8f9fa'
+                        },
+                        showlegend: true,
+                        legend: { x: 0, y: 1 },
+                        margin: { l: 0, r: 0, b: 0, t: 40 }
+                    };
+                }
+            }
+
+            // Generate cylinder geometry as a mesh
+            createCylinderMesh(start, end, radius, resolution = 16) {
+                const direction = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
+                const length = Math.sqrt(direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]);
+
+                if (length < 1e-6) return { x: [], y: [], z: [], i: [], j: [], k: [] };
+
+                const unit = [direction[0] / length, direction[1] / length, direction[2] / length];
+
+                // Create perpendicular vectors
+                let perp1, perp2;
+                if (Math.abs(unit[2]) < 0.9) {
+                    perp1 = [-unit[1], unit[0], 0];
+                } else {
+                    perp1 = [0, -unit[2], unit[1]];
+                }
+                const perp1_len = Math.sqrt(perp1[0] * perp1[0] + perp1[1] * perp1[1] + perp1[2] * perp1[2]);
+                perp1 = [perp1[0] / perp1_len, perp1[1] / perp1_len, perp1[2] / perp1_len];
+
+                perp2 = [
+                    unit[1] * perp1[2] - unit[2] * perp1[1],
+                    unit[2] * perp1[0] - unit[0] * perp1[2],
+                    unit[0] * perp1[1] - unit[1] * perp1[0]
+                ];
+
+                const x = [], y = [], z = [], i = [], j = [], k = [];
+
+                // Generate cylinder vertices
+                for (let layer = 0; layer <= 1; layer++) {
+                    const center = [
+                        start[0] + layer * direction[0],
+                        start[1] + layer * direction[1],
+                        start[2] + layer * direction[2]
+                    ];
+
+                    for (let ang = 0; ang < resolution; ang++) {
+                        const angle = (2 * Math.PI * ang) / resolution;
+                        const cos_a = Math.cos(angle);
+                        const sin_a = Math.sin(angle);
+
+                        x.push(center[0] + radius * (cos_a * perp1[0] + sin_a * perp2[0]));
+                        y.push(center[1] + radius * (cos_a * perp1[1] + sin_a * perp2[1]));
+                        z.push(center[2] + radius * (cos_a * perp1[2] + sin_a * perp2[2]));
+                    }
+                }
+
+                // Generate triangles for cylinder surface
+                for (let ang = 0; ang < resolution; ang++) {
+                    const next_ang = (ang + 1) % resolution;
+
+                    // Side faces
+                    i.push(ang, ang + resolution, next_ang);
+                    j.push(ang + resolution, next_ang + resolution, next_ang);
+                    k.push(next_ang, ang, next_ang + resolution);
+                }
+
+                return { x, y, z, i, j, k };
+            }
+
+            // Generate oriented box geometry as a mesh with optional rotation
+            createOrientedBoxMesh(start, end, width, height, rotation = null) {
+                const direction = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
+                const length = Math.sqrt(direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]);
+
+                if (length < 1e-6) return { x: [], y: [], z: [], i: [], j: [], k: [] };
+
+                // Normalize direction vector (this will be our local X-axis)
+                const localX = [direction[0] / length, direction[1] / length, direction[2] / length];
+
+                // Create perpendicular vectors (local Y and Z axes)
+                let localY, localZ;
+                if (Math.abs(localX[2]) < 0.9) {
+                    localY = [-localX[1], localX[0], 0];
+                } else {
+                    localY = [0, -localX[2], localX[1]];
+                }
+                const localY_len = Math.sqrt(localY[0] * localY[0] + localY[1] * localY[1] + localY[2] * localY[2]);
+                localY = [localY[0] / localY_len, localY[1] / localY_len, localY[2] / localY_len];
+
+                localZ = [
+                    localX[1] * localY[2] - localX[2] * localY[1],
+                    localX[2] * localY[0] - localX[0] * localY[2],
+                    localX[0] * localY[1] - localX[1] * localY[0]
+                ];
+
+                // Box center
+                const center = [
+                    (start[0] + end[0]) / 2,
+                    (start[1] + end[1]) / 2,
+                    (start[2] + end[2]) / 2
+                ];
+
+                // Half dimensions
+                const hx = length / 2;
+                const hy = width / 2;
+                const hz = height / 2;
+
+                // Generate 8 box vertices in local coordinate system
+                let localVertices = [
+                    [-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz], // bottom face
+                    [-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz]   // top face
+                ];
+
+                // Apply rotation to vertices in local frame if rotation is specified
+                if (rotation && Array.isArray(rotation) && rotation.length === 3) {
+                    const rotMatrix = this.createRotationMatrix(rotation[0], rotation[1], rotation[2]);
+                    
+                    localVertices = localVertices.map(vertex => this.applyRotation(vertex, rotMatrix));
+                }
+
+                const x = [], y = [], z = [];
+
+                // Transform vertices from local to world coordinates
+                for (const [lx, ly, lz] of localVertices) {
+                    x.push(center[0] + lx * localX[0] + ly * localY[0] + lz * localZ[0]);
+                    y.push(center[1] + lx * localX[1] + ly * localY[1] + lz * localZ[1]);
+                    z.push(center[2] + lx * localX[2] + ly * localY[2] + lz * localZ[2]);
+                }
+
+                // Define triangles for the box faces
+                const i = [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 0, 4];
+                const j = [1, 2, 3, 0, 5, 6, 4, 5, 6, 7, 1, 5];
+                const k = [2, 3, 0, 1, 6, 7, 5, 6, 7, 4, 5, 1];
+
+                return { x, y, z, i, j, k };
+            }
+
+            // Generate box geometry as a mesh (legacy axis-aligned version)
+            createBoxMesh(center, size) {
+                const [cx, cy, cz] = center;
+                const [sx, sy, sz] = size;
+                const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+
+                const x = [
+                    cx - hx, cx + hx, cx + hx, cx - hx, // bottom face
+                    cx - hx, cx + hx, cx + hx, cx - hx  // top face
+                ];
+                const y = [
+                    cy - hy, cy - hy, cy + hy, cy + hy, // bottom face
+                    cy - hy, cy - hy, cy + hy, cy + hy  // top face
+                ];
+                const z = [
+                    cz - hz, cz - hz, cz - hz, cz - hz, // bottom face
+                    cz + hz, cz + hz, cz + hz, cz + hz  // top face
+                ];
+
+                const i = [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 0, 4];
+                const j = [1, 2, 3, 0, 5, 6, 4, 5, 6, 7, 1, 5];
+                const k = [2, 3, 0, 1, 6, 7, 5, 6, 7, 4, 5, 1];
+
+                return { x, y, z, i, j, k };
+            }
+
+            // Generate sphere geometry as a mesh
+            createSphereMesh(center, radius, resolution = 12) {
+                const [cx, cy, cz] = center;
+                const x = [], y = [], z = [], i = [], j = [], k = [];
+
+                // Generate sphere vertices
+                for (let lat = 0; lat <= resolution; lat++) {
+                    const theta = Math.PI * lat / resolution;
+                    const sin_theta = Math.sin(theta);
+                    const cos_theta = Math.cos(theta);
+
+                    for (let lon = 0; lon <= resolution; lon++) {
+                        const phi = 2 * Math.PI * lon / resolution;
+                        const sin_phi = Math.sin(phi);
+                        const cos_phi = Math.cos(phi);
+
+                        x.push(cx + radius * sin_theta * cos_phi);
+                        y.push(cy + radius * sin_theta * sin_phi);
+                        z.push(cz + radius * cos_theta);
+                    }
+                }
+
+                // Generate triangles
+                for (let lat = 0; lat < resolution; lat++) {
+                    for (let lon = 0; lon < resolution; lon++) {
+                        const first = lat * (resolution + 1) + lon;
+                        const second = first + resolution + 1;
+
+                        i.push(first, second, first + 1);
+                        j.push(second, second + 1, first + 1);
+                        k.push(first + 1, second, second + 1);
+                    }
+                }
+
+                return { x, y, z, i, j, k };
+            }
+
+            // Apply offset to a position using simple world coordinates
+            applyOffset(position, config) {
+                if (!config.offset || !Array.isArray(config.offset) || config.offset.length !== 3) {
+                    return position; // No offset or invalid offset configuration
+                }
+
+                // Convert offset from mm to meters for 3D plot
+                const [offsetX, offsetY, offsetZ] = config.offset;
+
+                // Simple world coordinate offset for all shape types
+                return [
+                    position[0] + offsetX / 1000.0,  // World X (forward/backward) - convert mm to m
+                    position[1] + offsetY / 1000.0,  // World Y (left/right) - convert mm to m
+                    position[2] + offsetZ / 1000.0   // World Z (up/down) - convert mm to m
+                ];
+            }
+
+            // Apply offset in TCP local coordinate frame for TCP-attached shapes
+            applyTcpOffset(position, config, frameData) {
+                if (!config.offset || !Array.isArray(config.offset) || config.offset.length !== 3) {
+                    return position; // No offset or invalid offset configuration
+                }
+
+                // Convert offset from mm to meters
+                const [offsetX, offsetY, offsetZ] = config.offset;
+                const offset = [offsetX / 1000.0, offsetY / 1000.0, offsetZ / 1000.0];
+
+                // Use TCP frame orientation if available
+                if (frameData.end_effector_pose &&
+                    frameData.end_effector_pose.x_axis &&
+                    frameData.end_effector_pose.y_axis &&
+                    frameData.end_effector_pose.z_axis) {
+
+                    const x_axis = frameData.end_effector_pose.x_axis;
+                    const y_axis = frameData.end_effector_pose.y_axis;
+                    const z_axis = frameData.end_effector_pose.z_axis;
+
+                    // Transform offset from TCP local frame to world frame
+                    return [
+                        position[0] + offset[0] * x_axis[0] + offset[1] * y_axis[0] + offset[2] * z_axis[0],
+                        position[1] + offset[0] * x_axis[1] + offset[1] * y_axis[1] + offset[2] * z_axis[1],
+                        position[2] + offset[0] * x_axis[2] + offset[1] * y_axis[2] + offset[2] * z_axis[2]
+                    ];
+                } else {
+                    // Fall back to world coordinates if TCP frame not available
+                    return this.applyOffset(position, config);
+                }
+            }
+
+            // Create rotation matrix from Euler angles (XYZ order)
+            createRotationMatrix(rx, ry, rz) {
+                const toRad = Math.PI / 180;
+                rx *= toRad; ry *= toRad; rz *= toRad;
+
+                const cos_rx = Math.cos(rx), sin_rx = Math.sin(rx);
+                const cos_ry = Math.cos(ry), sin_ry = Math.sin(ry);
+                const cos_rz = Math.cos(rz), sin_rz = Math.sin(rz);
+
+                // XYZ Euler rotation matrix
+                return [
+                    [cos_ry * cos_rz, -cos_ry * sin_rz, sin_ry],
+                    [cos_rx * sin_rz + sin_rx * sin_ry * cos_rz, cos_rx * cos_rz - sin_rx * sin_ry * sin_rz, -sin_rx * cos_ry],
+                    [sin_rx * sin_rz - cos_rx * sin_ry * cos_rz, sin_rx * cos_rz + cos_rx * sin_ry * sin_rz, cos_rx * cos_ry]
+                ];
+            }
+
+            // Apply rotation to a direction vector
+            applyRotation(direction, rotationMatrix) {
+                const [x, y, z] = direction;
+                return [
+                    rotationMatrix[0][0] * x + rotationMatrix[0][1] * y + rotationMatrix[0][2] * z,
+                    rotationMatrix[1][0] * x + rotationMatrix[1][1] * y + rotationMatrix[1][2] * z,
+                    rotationMatrix[2][0] * x + rotationMatrix[2][1] * y + rotationMatrix[2][2] * z
+                ];
+            } createTraces(frameData) {
+                const traces = [];
+
+                // Robot links with joint coloring
+                if (frameData.positions && frameData.positions.length > 0) {
+                    const positions = frameData.positions;
+                    const jointColors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff', '#ff8844'];
+
+                    // Robot structure (lines between joints)
+                    const x = positions.map(p => p.x);
+                    const y = positions.map(p => p.y);
+                    const z = positions.map(p => p.z);
+
+                    traces.push({
+                        x: x,
+                        y: y,
+                        z: z,
+                        type: 'scatter3d',
+                        mode: 'lines+markers',
+                        line: {
+                            color: '#2E86AB',
+                            width: 8
+                        },
+                        marker: {
+                            size: positions.map((_, i) => i === 0 ? 12 : 10), // Larger base marker
+                            color: positions.map((_, i) => jointColors[i % jointColors.length]),
+                            line: { color: '#ffffff', width: 2 }
+                        },
+                        name: 'Robot Links',
+                        hovertemplate: 'Joint %{pointNumber}<br>X: %{x:.3f}<br>Y: %{y:.3f}<br>Z: %{z:.3f}<extra></extra>'
+                    });
+
+                    // Collision Shapes (configurable)
+                    if (this.showCollisionShapes) {
+                        const collisionConfig = this.getCollisionShapeConfig();
+
+                        // Process each collision shape from configuration
+                        Object.entries(collisionConfig).forEach(([shapeName, config]) => {
+                            if (config.type === 'cylinder' && positions.length > Math.max(config.from_joint, config.to_joint)) {
+                                let fromPos = [positions[config.from_joint].x, positions[config.from_joint].y, positions[config.from_joint].z];
+                                let toPos = [positions[config.to_joint].x, positions[config.to_joint].y, positions[config.to_joint].z];
+
+                                // Store original positions for consistent rotation
+                                const originalFromPos = [...fromPos];
+                                const originalToPos = [...toPos];
+
+                                // Apply rotation if configured - use consistent local coordinate frame
+                                if (config.rotation && Array.isArray(config.rotation) && config.rotation.length === 3) {
+                                    const center = [(originalFromPos[0] + originalToPos[0]) / 2, (originalFromPos[1] + originalToPos[1]) / 2, (originalFromPos[2] + originalToPos[2]) / 2];
+                                    const direction = [originalToPos[0] - originalFromPos[0], originalToPos[1] - originalFromPos[1], originalToPos[2] - originalFromPos[2]];
+                                    const length = Math.sqrt(direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2);
+
+                                    if (length > 1e-6) {
+                                        // Create local coordinate frame for the link (consistent across animation)
+                                        const linkX = [direction[0] / length, direction[1] / length, direction[2] / length]; // Along link
+
+                                        // Create perpendicular Y and Z axes for the link's local frame
+                                        let linkY, linkZ;
+                                        if (Math.abs(linkX[2]) < 0.9) {
+                                            linkY = [-linkX[1], linkX[0], 0];
+                                        } else {
+                                            linkY = [0, -linkX[2], linkX[1]];
+                                        }
+                                        const linkY_len = Math.sqrt(linkY[0] ** 2 + linkY[1] ** 2 + linkY[2] ** 2);
+                                        linkY = [linkY[0] / linkY_len, linkY[1] / linkY_len, linkY[2] / linkY_len];
+
+                                        linkZ = [
+                                            linkX[1] * linkY[2] - linkX[2] * linkY[1],
+                                            linkX[2] * linkY[0] - linkX[0] * linkY[2],
+                                            linkX[0] * linkY[1] - linkX[1] * linkY[0]
+                                        ];
+
+                                        // Apply rotation in local coordinate frame
+                                        const rotMatrix = this.createRotationMatrix(config.rotation[0], config.rotation[1], config.rotation[2]);
+
+                                        // Start with unit vector along X (link direction) in local frame
+                                        const localX = [1, 0, 0];
+                                        const rotatedLocalDir = this.applyRotation(localX, rotMatrix);
+
+                                        // Convert back to world coordinates
+                                        const rotatedWorldDir = [
+                                            rotatedLocalDir[0] * linkX[0] + rotatedLocalDir[1] * linkY[0] + rotatedLocalDir[2] * linkZ[0],
+                                            rotatedLocalDir[0] * linkX[1] + rotatedLocalDir[1] * linkY[1] + rotatedLocalDir[2] * linkZ[1],
+                                            rotatedLocalDir[0] * linkX[2] + rotatedLocalDir[1] * linkY[2] + rotatedLocalDir[2] * linkZ[2]
+                                        ];
+
+                                        fromPos = [center[0] - rotatedWorldDir[0] * length / 2, center[1] - rotatedWorldDir[1] * length / 2, center[2] - rotatedWorldDir[2] * length / 2];
+                                        toPos = [center[0] + rotatedWorldDir[0] * length / 2, center[1] + rotatedWorldDir[1] * length / 2, center[2] + rotatedWorldDir[2] * length / 2];
+                                    }
+                                }
+
+                                // Apply offset - use TCP local frame for TCP-attached shapes
+                                if (config.offset) {
+                                    const center = [(fromPos[0] + toPos[0]) / 2, (fromPos[1] + toPos[1]) / 2, (fromPos[2] + toPos[2]) / 2];
+
+                                    // Check if this cylinder connects to the TCP (last position in array)
+                                    const isTcpAttached = config.to_joint === positions.length - 1 || config.from_joint === positions.length - 1;
+
+                                    let offsetCenter;
+                                    if (isTcpAttached) {
+                                        offsetCenter = this.applyTcpOffset(center, config, frameData);
+                                    } else {
+                                        offsetCenter = this.applyOffset(center, config);
+                                    }
+
+                                    const halfLink = [(toPos[0] - fromPos[0]) / 2, (toPos[1] - fromPos[1]) / 2, (toPos[2] - fromPos[2]) / 2];
+                                    fromPos = [offsetCenter[0] - halfLink[0], offsetCenter[1] - halfLink[1], offsetCenter[2] - halfLink[2]];
+                                    toPos = [offsetCenter[0] + halfLink[0], offsetCenter[1] + halfLink[1], offsetCenter[2] + halfLink[2]];
+                                }
+
+                                const cylinderMesh = this.createCylinderMesh(fromPos, toPos, (config.radius || 50) / 1000.0);
+
+                                traces.push({
+                                    x: cylinderMesh.x,
+                                    y: cylinderMesh.y,
+                                    z: cylinderMesh.z,
+                                    i: cylinderMesh.i,
+                                    j: cylinderMesh.j,
+                                    k: cylinderMesh.k,
+                                    type: 'mesh3d',
+                                    opacity: config.opacity || 0.6,
+                                    color: config.color || '#FF6B6B',
+                                    name: `${shapeName} (J${config.from_joint}-J${config.to_joint})`,
+                                    showlegend: true,
+                                    hovertemplate: `${shapeName} between J${config.from_joint}-J${config.to_joint}<br>Radius: ${config.radius || 50}mm<extra></extra>`
+                                });
+                            }
+
+                            else if (config.type === 'box' && positions.length > Math.max(config.from_joint, config.to_joint)) {
+                                const fromPos = [positions[config.from_joint].x, positions[config.from_joint].y, positions[config.from_joint].z];
+                                const toPos = [positions[config.to_joint].x, positions[config.to_joint].y, positions[config.to_joint].z];
+
+                                let center = [(fromPos[0] + toPos[0]) / 2, (fromPos[1] + toPos[1]) / 2, (fromPos[2] + toPos[2]) / 2];
+
+                                // Apply offset - use TCP local frame for TCP-attached shapes
+                                if (config.offset) {
+                                    // Check if this box connects to the TCP (last position in array)
+                                    const isTcpAttached = config.to_joint === positions.length - 1 || config.from_joint === positions.length - 1;
+                                    if (isTcpAttached) {
+                                        center = this.applyTcpOffset(center, config, frameData);
+                                    } else {
+                                        center = this.applyOffset(center, config);
+                                    }
+                                }
+
+                                const distance = Math.sqrt(
+                                    Math.pow(toPos[0] - fromPos[0], 2) +
+                                    Math.pow(toPos[1] - fromPos[1], 2) +
+                                    Math.pow(toPos[2] - fromPos[2], 2)
+                                );
+
+                                // Handle size configuration: [length, width, height] in mm
+                                let length, width, height;
+                                if (config.size && config.size.length === 3) {
+                                    length = config.size[0] / 1000.0;  // Box length (along link direction) - convert mm to m
+                                    width = config.size[1] / 1000.0;   // Box width - convert mm to m
+                                    height = config.size[2] / 1000.0;  // Box height - convert mm to m
+                                } else {
+                                    // Use link distance as length if no size specified
+                                    length = distance;
+                                    width = 0.08;   // Default width in meters
+                                    height = 0.08;  // Default height in meters
+                                }
+
+                                // Create box with specified absolute dimensions
+                                // Calculate new end position based on specified length
+                                const linkDirection = [
+                                    (toPos[0] - fromPos[0]) / distance,
+                                    (toPos[1] - fromPos[1]) / distance,
+                                    (toPos[2] - fromPos[2]) / distance
+                                ];
+
+                                const newFromPos = [
+                                    center[0] - linkDirection[0] * length / 2,
+                                    center[1] - linkDirection[1] * length / 2,
+                                    center[2] - linkDirection[2] * length / 2
+                                ];
+
+                                const newToPos = [
+                                    center[0] + linkDirection[0] * length / 2,
+                                    center[1] + linkDirection[1] * length / 2,
+                                    center[2] + linkDirection[2] * length / 2
+                                ];
+
+                                // Create box mesh with rotation applied in link's local frame
+                                let boxMesh = this.createOrientedBoxMesh(newFromPos, newToPos, width, height, config.rotation);
+
+                                traces.push({
+                                    x: boxMesh.x,
+                                    y: boxMesh.y,
+                                    z: boxMesh.z,
+                                    i: boxMesh.i,
+                                    j: boxMesh.j,
+                                    k: boxMesh.k,
+                                    type: 'mesh3d',
+                                    opacity: config.opacity || 0.6,
+                                    color: config.color || '#4ECDC4',
+                                    name: `${shapeName} (J${config.from_joint}-J${config.to_joint})`,
+                                    showlegend: true,
+                                    hovertemplate: `${shapeName} between J${config.from_joint}-J${config.to_joint}<br>Size: ${(length * 1000).toFixed(0)}×${(width * 1000).toFixed(0)}×${(height * 1000).toFixed(0)}mm<extra></extra>`
+                                });
+                            }
+
+                            else if (config.type === 'sphere' && positions.length > config.at_joint) {
+                                let jointPos = [positions[config.at_joint].x, positions[config.at_joint].y, positions[config.at_joint].z];
+
+                                // Apply offset - use TCP local frame for TCP-attached shapes
+                                if (config.offset) {
+                                    // Check if this is attached to the TCP (last position in array)
+                                    const isTcpAttached = config.at_joint === positions.length - 1;
+
+                                    if (isTcpAttached) {
+                                        jointPos = this.applyTcpOffset(jointPos, config, frameData);
+                                    } else {
+                                        jointPos = this.applyOffset(jointPos, config);
+                                    }
+                                }
+
+                                const sphereMesh = this.createSphereMesh(jointPos, (config.radius || 60) / 1000.0);
+
+                                traces.push({
+                                    x: sphereMesh.x,
+                                    y: sphereMesh.y,
+                                    z: sphereMesh.z,
+                                    i: sphereMesh.i,
+                                    j: sphereMesh.j,
+                                    k: sphereMesh.k,
+                                    type: 'mesh3d',
+                                    opacity: config.opacity || 0.6,
+                                    color: config.color || '#FFE66D',
+                                    name: `${shapeName} (J${config.at_joint})`,
+                                    showlegend: true,
+                                    hovertemplate: `${shapeName} at J${config.at_joint}<br>Radius: ${config.radius || 60}mm<extra></extra>`
+                                });
+                            }
+                        });
+                    }
+                }
+
+                // TCP Frame visualization
+                if (this.showTcpFrame && frameData.end_effector_pose) {
+                    const tcpPose = frameData.end_effector_pose;
+                    const tcpPos = tcpPose.position;
+                    const frameSize = 0.1;
+
+                    // Check if we have orientation axes
+                    if (tcpPose.x_axis && tcpPose.y_axis && tcpPose.z_axis) {
+                        // Use actual orientation from robot kinematics
+                        const x_axis = tcpPose.x_axis;
+                        const y_axis = tcpPose.y_axis;
+                        const z_axis = tcpPose.z_axis;
+
+                        // X-axis (red) - oriented according to robot TCP frame
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x + frameSize * x_axis[0]],
+                            y: [tcpPos.y, tcpPos.y + frameSize * x_axis[1]],
+                            z: [tcpPos.z, tcpPos.z + frameSize * x_axis[2]],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#FF0000', width: 6 },
+                            name: 'TCP X-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Y-axis (green) - oriented according to robot TCP frame
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x + frameSize * y_axis[0]],
+                            y: [tcpPos.y, tcpPos.y + frameSize * y_axis[1]],
+                            z: [tcpPos.z, tcpPos.z + frameSize * y_axis[2]],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#00FF00', width: 6 },
+                            name: 'TCP Y-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Z-axis (blue) - oriented according to robot TCP frame
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x + frameSize * z_axis[0]],
+                            y: [tcpPos.y, tcpPos.y + frameSize * z_axis[1]],
+                            z: [tcpPos.z, tcpPos.z + frameSize * z_axis[2]],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#0000FF', width: 6 },
+                            name: 'TCP Z-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+                    } else if (positions.length > 0) {
+                        // Fallback to simple fixed orientation frame using last position
+                        const tcpPos = positions[positions.length - 1];
+
+                        // X-axis (red)
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x + frameSize],
+                            y: [tcpPos.y, tcpPos.y],
+                            z: [tcpPos.z, tcpPos.z],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#FF0000', width: 6 },
+                            name: 'TCP X-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Y-axis (green)
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x],
+                            y: [tcpPos.y, tcpPos.y + frameSize],
+                            z: [tcpPos.z, tcpPos.z],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#00FF00', width: 6 },
+                            name: 'TCP Y-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Z-axis (blue)
+                        traces.push({
+                            x: [tcpPos.x, tcpPos.x],
+                            y: [tcpPos.y, tcpPos.y],
+                            z: [tcpPos.z, tcpPos.z + frameSize],
+                            type: 'scatter3d',
+                            mode: 'lines',
+                            line: { color: '#0000FF', width: 6 },
+                            name: 'TCP Z-axis',
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+                    }
+                }
+
+                // Trajectory path
+                if (this.showTrajectory && frameData.trajectory && frameData.trajectory.length > 1) {
+                    traces.push({
+                        x: frameData.trajectory.map(p => p.x),
+                        y: frameData.trajectory.map(p => p.y),
+                        z: frameData.trajectory.map(p => p.z),
+                        type: 'scatter3d',
+                        mode: 'lines',
+                        line: {
+                            color: '#A23B72',
+                            width: 4
+                        },
+                        name: 'Trajectory',
+                        hovertemplate: 'Trajectory Point<br>X: %{x:.3f}<br>Y: %{y:.3f}<br>Z: %{z:.3f}<extra></extra>'
+                    });
+
+                    // Current target point
+                    if (frameData.trajectory.length > 0) {
+                        const currentTarget = frameData.trajectory[frameData.trajectory.length - 1];
+                        traces.push({
+                            x: [currentTarget.x],
+                            y: [currentTarget.y],
+                            z: [currentTarget.z],
+                            type: 'scatter3d',
+                            mode: 'markers',
+                            marker: {
+                                size: 8,
+                                color: '#A23B72',
+                                symbol: 'diamond',
+                                line: { color: '#ffffff', width: 2 }
+                            },
+                            name: 'Current Target',
+                            showlegend: false,
+                            hovertemplate: 'Current Target<br>X: %{x:.3f}<br>Y: %{y:.3f}<br>Z: %{z:.3f}<extra></extra>'
+                        });
+                    }
+                }
+
+                // Parallelogram linkage visualization
+                if (this.showParallelogram && frameData.parallelogram_links) {
+                    frameData.parallelogram_links.forEach((link, index) => {
+                        if (link.start && link.end) {
+                            traces.push({
+                                x: [link.start.x, link.end.x],
+                                y: [link.start.y, link.end.y],
+                                z: [link.start.z, link.end.z],
+                                type: 'scatter3d',
+                                mode: 'lines',
+                                line: {
+                                    color: '#FF8C00',
+                                    width: 6,
+                                    dash: 'dash'
+                                },
+                                name: index === 0 ? 'Parallelogram' : undefined,
+                                showlegend: index === 0,
+                                hovertemplate: `Parallelogram Link ${index + 1}<br>Start: (${link.start.x.toFixed(3)}, ${link.start.y.toFixed(3)}, ${link.start.z.toFixed(3)})<br>End: (${link.end.x.toFixed(3)}, ${link.end.y.toFixed(3)}, ${link.end.z.toFixed(3)})<extra></extra>`
+                            });
+                        }
+                    });
+                }
+
+                // Base coordinate system
+                const baseFrameSize = 0.15;
+                traces.push(
+                    // X-axis
+                    {
+                        x: [0, baseFrameSize],
+                        y: [0, 0],
+                        z: [0, 0],
+                        type: 'scatter3d',
+                        mode: 'lines',
+                        line: { color: '#FF0000', width: 6 },
+                        name: 'Base X-axis',
+                        showlegend: false,
+                        hoverinfo: 'skip'
+                    },
+                    // Y-axis  
+                    {
+                        x: [0, 0],
+                        y: [0, baseFrameSize],
+                        z: [0, 0],
+                        type: 'scatter3d',
+                        mode: 'lines',
+                        line: { color: '#00FF00', width: 6 },
+                        name: 'Base Y-axis',
+                        showlegend: false,
+                        hoverinfo: 'skip'
+                    },
+                    // Z-axis
+                    {
+                        x: [0, 0],
+                        y: [0, 0],
+                        z: [0, baseFrameSize],
+                        type: 'scatter3d',
+                        mode: 'lines',
+                        line: { color: '#0000FF', width: 6 },
+                        name: 'Base Z-axis',
+                        showlegend: false,
+                        hoverinfo: 'skip'
+                    });
+
+                return traces;
+            }
+
+            updateFrame() {
+                if (!this.animationData || this.currentFrame >= this.totalFrames) return;
+
+                const frameData = this.animationData.frames[this.currentFrame];
+                const traces = this.createTraces(frameData);
+                const layout = this.createLayout();
+
+                // Preserve camera position during animation
+                if (this.elements.plotContainer._fullLayout &&
+                    this.elements.plotContainer._fullLayout.scene &&
+                    this.elements.plotContainer._fullLayout.scene.camera) {
+                    layout.scene.camera = this.elements.plotContainer._fullLayout.scene.camera;
+                }
+
+                // Always use full redraw for reliability
+                Plotly.react(this.elements.plotContainer, traces, layout);
+
+                this.elements.progressSlider.value = this.currentFrame;
+                this.updateFrameDisplay();
+            }
+
+            updateVisualization() {
+                if (!this.animationData) return;
+
+                const frameData = this.animationData.frames[this.currentFrame];
+                const traces = this.createTraces(frameData);
+                const layout = this.createLayout();
+
+                // Preserve current camera position if plot exists
+                if (this.elements.plotContainer.layout &&
+                    this.elements.plotContainer.layout.scene &&
+                    this.elements.plotContainer.layout.scene.camera) {
+                    layout.scene.camera = this.elements.plotContainer.layout.scene.camera;
+                }
+
+                Plotly.react(this.elements.plotContainer, traces, layout);
+            }
+
+            updateLayout() {
+                if (!this.animationData) return;
+
+                const layout = this.createLayout();
+                Plotly.relayout(this.elements.plotContainer, layout.scene);
+            }
+
+            togglePlay() {
+                if (this.isPlaying) {
+                    this.pause();
+                } else {
+                    this.play();
+                }
+            }
+
+            play() {
+                if (!this.animationData) return;
+
+                this.isPlaying = true;
+                this.elements.playBtn.textContent = '⏸ Pause';
+                this.elements.animationStatus.textContent = 'Playing';
+
+                const frameDuration = this.speedSettings[this.currentSpeedIndex].duration;
+                let lastFrameTime = performance.now();
+                let accumulatedTime = 0;
+
+                const animate = (currentTime) => {
+                    if (!this.isPlaying) return;
+
+                    const deltaTime = currentTime - lastFrameTime;
+                    lastFrameTime = currentTime;
+                    accumulatedTime += deltaTime;
+
+                    // Check if it's time to advance to the next frame
+                    if (accumulatedTime >= frameDuration) {
+                        // For very fast speeds, potentially skip frames to maintain timing
+                        const framesToAdvance = Math.max(1, Math.floor(accumulatedTime / frameDuration));
+                        this.currentFrame += framesToAdvance;
+
+                        if (this.currentFrame >= this.totalFrames) {
+                            this.currentFrame = 0; // Loop
+                        }
+
+                        this.updateFrame();
+                        accumulatedTime = accumulatedTime % frameDuration;
+                    }
+
+                    this.animationRequestId = requestAnimationFrame(animate);
+                };
+
+                this.animationRequestId = requestAnimationFrame(animate);
+            }
+
+            pause() {
+                this.isPlaying = false;
+                this.elements.playBtn.textContent = '▶ Play';
+                this.elements.animationStatus.textContent = 'Paused';
+
+                if (this.animationRequestId) {
+                    cancelAnimationFrame(this.animationRequestId);
+                    this.animationRequestId = null;
+                }
+            }
+
+            resetAnimation() {
+                this.pause();
+                this.currentFrame = 0;
+                this.updateFrame();
+                this.elements.animationStatus.textContent = 'Ready';
+            }
+
+            updateSpeed() {
+                this.currentSpeedIndex = parseInt(this.elements.speedSelect.value);
+                if (this.isPlaying) {
+                    this.pause();
+                    this.play(); // Restart with new speed
+                }
+            }
+
+            seekToFrame(frameNumber) {
+                this.currentFrame = Math.max(0, Math.min(frameNumber, this.totalFrames - 1));
+                this.updateFrame();
+            }
+
+            updateFrameDisplay() {
+                this.elements.frameDisplay.textContent = `Frame ${this.currentFrame + 1} / ${this.totalFrames}`;
+            }
+        }
+
+        // Initialize the viewer when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new RobotAnimationViewer();
+        });
+    </script>
+</body>
+
+</html>
