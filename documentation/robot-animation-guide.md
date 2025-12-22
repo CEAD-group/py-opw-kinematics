@@ -61,8 +61,8 @@ This helps you understand what the py-opw-kinematics library is calculating behi
 
 ### Step 1: Open the Viewer
 
-1. **Open** `documentation/robot_animation_viewer_collision_shapes.html` **directly in your browser**
-2. **Click "Choose File"** and select the `live_robot_animation.json` file you created
+1. **Open** `documentation/robot_animation_viewer.html` **directly in your browser**
+2. **Click "Choose File"** and select the `robot_animation.json` file you created
 
 ### Step 2: What You'll See
 
