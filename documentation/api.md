@@ -74,27 +74,26 @@ axis_limits = [
 model.set_axis_limits(axis_limits)
 ```
 
-##### set_absolute_constraint(axis, min, max, degrees=False)
+##### set_absolute_constraint(axis, min, max, degrees=True)
 Set absolute constraint for a specific axis.
 
 **Parameters:**
 - `axis`: Axis index (0-5)
 - `min`, `max`: Constraint limits
-- `degrees`: If `True`, interpret limits as degrees; if `False` (default), interpret as radians
+- `degrees`: If `True` (default), interpret limits as degrees; if `False`, interpret as radians
 
 **Unit Handling:**
 - Input values converted to radians internally regardless of input format
 - Stored values always in radians for consistency
-- Use `degrees=True` for clarity when working with degree values
+- Robotics-friendly: Uses degrees by default
 
 ```python
-# Explicit degrees input (recommended for clarity)
-model.set_absolute_constraint(0, -180, 180, degrees=True)   # J1: ±180°
-model.set_absolute_constraint(1, -90, 90, degrees=True)     # J2: ±90°
+# Degrees input (default, robotics-friendly)
+model.set_absolute_constraint(0, -180, 180)        # J1: ±180° (degrees=True default)
+model.set_absolute_constraint(1, -90, 90)          # J2: ±90° (degrees=True default)
 
-# Radians input
+# Radians input (explicit)
 model.set_absolute_constraint(0, -np.pi, np.pi, degrees=False)  # J1 in radians
-model.set_absolute_constraint(0, -np.pi, np.pi)                 # degrees=False is default
 
 # Verify storage (always returns radians)
 constraints = model.axis_limits
@@ -104,14 +103,14 @@ if constraints:
     print(f"Equivalent: [{np.rad2deg(min_rad):.1f}°, {np.rad2deg(max_rad):.1f}°]")
 ```
 
-##### set_relative_constraint(axis, reference_axis, min_offset, max_offset, degrees=False)
+##### set_relative_constraint(axis, reference_axis, min_offset, max_offset, degrees=True)
 Set relative constraint between two axes (difference constraint: axis - reference_axis).
 
 **Parameters:**
 - `axis`: Axis to constrain (0-5)
 - `reference_axis`: Reference axis (0-5)
 - `min_offset`, `max_offset`: Constraint limits for (axis - reference_axis)
-- `degrees`: If `True`, interpret offsets as degrees; if `False` (default), interpret as radians
+- `degrees`: If `True` (default), interpret offsets as degrees; if `False`, interpret as radians
 
 **Unit Handling:**
 - Input values converted to radians internally regardless of input format
@@ -119,12 +118,11 @@ Set relative constraint between two axes (difference constraint: axis - referenc
 - Property `relative_constraints` returns values in radians
 
 ```python
-# Explicit degrees input (recommended for clarity)
-model.set_relative_constraint(2, 1, -160, -30, degrees=True)  # J3-J2: [-160°, -30°]
+# Degrees input (default, robotics-friendly)
+model.set_relative_constraint(2, 1, -160, -30)  # J3-J2: [-160°, -30°] (degrees=True default)
 
-# Radians input
+# Radians input (explicit)
 model.set_relative_constraint(2, 1, np.deg2rad(-160), np.deg2rad(-30), degrees=False)
-model.set_relative_constraint(2, 1, -2.793, -0.524)  # Direct radians (degrees=False default)
 
 # Verify storage (always returns radians)
 rel_constraints = model.relative_constraints
@@ -134,7 +132,7 @@ if rel_constraints:
     print(f"Equivalent: [{np.rad2deg(min_rad):.1f}°, {np.rad2deg(max_rad):.1f}°]")
 ```
 
-##### set_sum_constraint(axis, reference_axis, min_sum, max_sum, degrees=False)
+##### set_sum_constraint(axis, reference_axis, min_sum, max_sum, degrees=True)
 Set sum constraint between two axes (sum constraint: axis + reference_axis).
 Typically used for parallelogram linkages.
 
@@ -142,7 +140,7 @@ Typically used for parallelogram linkages.
 - `axis`: Axis to constrain (0-5)
 - `reference_axis`: Reference axis (0-5)  
 - `min_sum`, `max_sum`: Constraint limits for (axis + reference_axis)
-- `degrees`: If `True`, interpret sums as degrees; if `False` (default), interpret as radians
+- `degrees`: If `True` (default), interpret sums as degrees; if `False`, interpret as radians
 
 **Constraint Behavior:**
 - Uses strict inequalities: `min_sum < (axis + reference_axis) < max_sum`
@@ -154,14 +152,13 @@ Typically used for parallelogram linkages.
 - Property `sum_constraints` returns values in radians
 
 ```python
-# Explicit degrees input (recommended for clarity)
-model.set_sum_constraint(2, 1, -160, -30, degrees=True)  # J2+J3: (-160°, -30°)
+# Degrees input (default, robotics-friendly)
+model.set_sum_constraint(2, 1, -160, -30)  # J2+J3: (-160°, -30°) (degrees=True default)
 
-# Radians input
+# Radians input (explicit)
 min_sum = np.deg2rad(-160)  # Convert to radians
 max_sum = np.deg2rad(-30)   # Convert to radians
 model.set_sum_constraint(2, 1, min_sum, max_sum, degrees=False)
-model.set_sum_constraint(2, 1, -2.793, -0.524)  # Direct radians (degrees=False default)
 
 # Verify storage (always returns radians)
 sum_constraints = model.sum_constraints
@@ -227,7 +224,7 @@ axis_limits = [(-175, 175), (-75, 75), (-220, 0), (-270, 270), (-125, 125), (-27
 model.set_axis_limits(axis_limits)
 
 # Alternative: Set sum constraint at runtime
-# model.set_sum_constraint(2, 1, -160, -30, degrees=True)
+# model.set_sum_constraint(2, 1, -160, -30)  # Defaults to degrees
 ```
 
 ---
@@ -940,8 +937,8 @@ Define individual joint angle limits.
 
 ```python
 # Set limits for individual axes (explicit degrees)
-model.set_absolute_constraint(0, -180, 180, degrees=True)  # J1: ±180°
-model.set_absolute_constraint(1, -90, 90, degrees=True)    # J2: ±90°
+model.set_absolute_constraint(0, -180, 180)  # J1: ±180° (default)
+model.set_absolute_constraint(1, -90, 90)    # J2: ±90° (default)
 
 # Set limits for all axes at once
 axis_limits = [(-180, 180), (-90, 90), (-180, 0), (-270, 270), (-125, 125), (-270, 270)]
@@ -986,11 +983,11 @@ model.set_sum_constraint(2, 1, -160, -30, degrees=True)
 
 ```python
 # Relative constraint example (difference)
-model.set_relative_constraint(2, 1, -160, -30, degrees=True)  # -160° ≤ (J3-J2) ≤ -30°
+model.set_relative_constraint(2, 1, -160, -30)  # -160° ≤ (J3-J2) ≤ -30°
 joints_rel = [0, 30, -120, 0, 0, 0]  # J2=30°, J3=-120° → diff=-150° ✓
 
 # Sum constraint example (parallelogram)
-model.set_sum_constraint(2, 1, -160, -30, degrees=True)      # -160° < (J2+J3) < -30°
+model.set_sum_constraint(2, 1, -160, -30)      # -160° < (J2+J3) < -30°
 joints_sum = [0, 20, -150, 0, 0, 0]  # J2=20°, J3=-150° → sum=-130° ✓
 
 # Test constraints
@@ -1016,14 +1013,14 @@ is_sum_valid = model.joints_within_limits_vec(joints_sum, degrees=True)
 
 #### Best Practices
 
-1. **Be Explicit**: Use `degrees=True` parameter for clarity in new code
+1. **Use Default Degrees**: The API now defaults to degrees for robotics-friendly usage
    ```python
-   # Recommended: Explicit unit specification
-   model.set_absolute_constraint(0, -180, 180, degrees=True)
-   model.set_sum_constraint(2, 1, -160, -30, degrees=True)
+   # Recommended: Simple and clear (degrees=True is default)
+   model.set_absolute_constraint(0, -180, 180)
+   model.set_sum_constraint(2, 1, -160, -30)
    
-   # Avoid: Implicit unit assumptions
-   model.set_absolute_constraint(0, -180, 180)  # Unclear if degrees or radians
+   # Only specify degrees parameter when using radians
+   model.set_absolute_constraint(0, -np.pi, np.pi, degrees=False)
    ```
 
 2. **Verify Storage**: Check constraints with property getters during development
@@ -1058,7 +1055,7 @@ is_sum_valid = model.joints_within_limits_vec(joints_sum, degrees=True)
    
    # Method 2: Runtime with degrees
    model2 = KinematicModel()
-   model2.set_sum_constraint(2, 1, -160, -30, degrees=True)
+   model2.set_sum_constraint(2, 1, -160, -30)
    
    # Method 3: Runtime with radians
    model3 = KinematicModel()

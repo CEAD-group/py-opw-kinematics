@@ -54,7 +54,7 @@ for i, (lower, upper) in enumerate(axis_limits_nj165):
     )  # Input in degrees
 
 # Alternative approach: set relative constraint after initialization
-# kinematic_model.set_relative_constraint(2, 1, -150, -50, degrees=True)
+# kinematic_model.set_relative_constraint(2, 1, -150, -50)  # Now defaults to degrees
 
 parallelogram_limits = (-160.0, -30.0)  # relative limits for J3 relative to J2
 

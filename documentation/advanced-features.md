@@ -66,8 +66,8 @@ model = KinematicModel(
 )
 
 # Method 2: Set sum constraints at runtime using degrees
-model.set_sum_constraint(2, 1, -160, -30, degrees=True)  # Input in degrees
-model.set_sum_constraint(5, 4, -90, 90, degrees=True)   # Input in degrees
+model.set_sum_constraint(2, 1, -160, -30)  # Input in degrees (default)
+model.set_sum_constraint(5, 4, -90, 90)   # Input in degrees (default)
 
 # Method 3: Set sum constraints at runtime using radians
 min_sum = np.deg2rad(-160)  # Convert to radians

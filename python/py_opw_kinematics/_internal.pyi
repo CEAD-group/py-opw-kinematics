@@ -162,15 +162,15 @@ class KinematicModel:
         ...
 
     def set_absolute_constraint(
-        self, axis: int, min: float, max: float, degrees: bool = False
+        self, axis: int, min: float, max: float, degrees: bool = True
     ) -> None:
         """
         Sets an absolute constraint for a specific axis.
 
         :param axis: The axis index (0-5).
-        :param min: Minimum allowed value (in radians by default, degrees if degrees=True).
-        :param max: Maximum allowed value (in radians by default, degrees if degrees=True).
-        :param degrees: If True, min and max are in degrees; if False (default), in radians.
+        :param min: Minimum allowed value (in degrees by default, radians if degrees=False).
+        :param max: Maximum allowed value (in degrees by default, radians if degrees=False).
+        :param degrees: If True (default), min and max are in degrees; if False, in radians.
         """
         ...
 
@@ -180,16 +180,16 @@ class KinematicModel:
         reference_axis: int,
         min_offset: float,
         max_offset: float,
-        degrees: bool = False,
+        degrees: bool = True,
     ) -> None:
         """
         Sets a relative constraint for a specific axis.
 
         :param axis: The axis index to constrain (0-5).
         :param reference_axis: The reference axis index (0-5).
-        :param min_offset: Minimum offset from reference axis (in radians by default, degrees if degrees=True).
-        :param max_offset: Maximum offset from reference axis (in radians by default, degrees if degrees=True).
-        :param degrees: If True, offsets are in degrees; if False (default), in radians.
+        :param min_offset: Minimum offset from reference axis (in degrees by default, radians if degrees=False).
+        :param max_offset: Maximum offset from reference axis (in degrees by default, radians if degrees=False).
+        :param degrees: If True (default), offsets are in degrees; if False, in radians.
         """
         ...
 
@@ -199,16 +199,16 @@ class KinematicModel:
         reference_axis: int,
         min_sum: float,
         max_sum: float,
-        degrees: bool = False,
+        degrees: bool = True,
     ) -> None:
         """
         Sets a sum constraint for a specific axis (for parallelogram constraints).
 
         :param axis: The axis index to constrain (0-5).
         :param reference_axis: The reference axis index (0-5).
-        :param min_sum: Minimum sum of axis + reference_axis (in radians by default, degrees if degrees=True).
-        :param max_sum: Maximum sum of axis + reference_axis (in radians by default, degrees if degrees=True).
-        :param degrees: If True, values are in degrees; if False (default), in radians.
+        :param min_sum: Minimum sum of axis + reference_axis (in degrees by default, radians if degrees=False).
+        :param max_sum: Maximum sum of axis + reference_axis (in degrees by default, radians if degrees=False).
+        :param degrees: If True (default), values are in degrees; if False, in radians.
         """
         ...
 
