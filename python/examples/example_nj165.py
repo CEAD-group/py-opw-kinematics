@@ -9,9 +9,8 @@ Also demonstrates constraint unit handling (degrees input, radians storage).
 # %%
 from py_opw_kinematics import KinematicModel, Robot, EulerConvention
 import polars as pl
-import numpy as np
 
-# Create kinematic model with relative constraints during initialization
+# Create kinematic model
 kinematic_model = KinematicModel(
     a1=400,  # $MC_ROBX_MAIN_LENGTH_AB[0]
     a2=-250,  # - $MC_ROBX_TX3P3_POS[2]
@@ -23,21 +22,7 @@ kinematic_model = KinematicModel(
     offsets=(0, 0, 0, 0, 0, 0),
     flip_axes=(False, False, True, False, False, False),
     has_parallelogram=True,
-    relative_constraints=[
-        (2, 1, -150, -50),  # J3 relative to J2: parallelogram limits in degrees
-    ],
 )  # Create kinematic model for Comau NJ165-3.0
-
-# Verify constraint storage (always in radians internally)
-print("NJ165 Constraint Unit Verification:")
-stored_constraints = kinematic_model.relative_constraints
-if stored_constraints:
-    j3_j2_constraint = stored_constraints[0]
-    print(f"Input: J3-J2 range [-150°, -50°]")
-    print(f"Stored: [{j3_j2_constraint[2]:.4f}, {j3_j2_constraint[3]:.4f}] rad")
-    print(
-        f"Verify: [{np.rad2deg(j3_j2_constraint[2]):.1f}°, {np.rad2deg(j3_j2_constraint[3]):.1f}°]\n"
-    )
 
 axis_limits_nj165 = (  # lower and upper limits per axis in degrees
     (-175, 175),
@@ -52,9 +37,6 @@ for i, (lower, upper) in enumerate(axis_limits_nj165):
     kinematic_model.set_absolute_constraint(
         i, lower, upper, degrees=True
     )  # Input in degrees
-
-# Alternative approach: set relative constraint after initialization
-# kinematic_model.set_relative_constraint(2, 1, -150, -50)  # Now defaults to degrees
 
 parallelogram_limits = (-160.0, -30.0)  # relative limits for J3 relative to J2
 
@@ -108,8 +90,8 @@ kinematic_model.clear_all_constraints()
 kinematic_model.set_sum_constraint(  # J3 is axis 2, J2 is axis 1
     axis=2,
     reference_axis=1,
-    min_offset=parallelogram_limits[0],
-    max_offset=parallelogram_limits[1],
+    min_sum=parallelogram_limits[0],
+    max_sum=parallelogram_limits[1],
     degrees=True,
 )
 kinematic_model.set_axis_limits(limits=axis_limits_nj165)

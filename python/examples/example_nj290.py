@@ -9,6 +9,7 @@ depend on another axis's position, which is common in parallelogram mechanisms.
 from py_opw_kinematics import KinematicModel, Robot, EulerConvention
 import polars as pl
 
+# Create kinematic model
 kinematic_model = KinematicModel(
     a1=460,  # $MC_ROBX_MAIN_LENGTH_AB[0]
     a2=-250,  # - $MC_ROBX_TX3P3_POS[2]
@@ -30,14 +31,26 @@ axis_limits_nj290 = (  # lower and upper limits per axis in degrees
     (-125, 125),
     (-2700, 2700),
 )
+# Add absolute constraints using degrees parameter for clarity
+for i, (lower, upper) in enumerate(axis_limits_nj165):
+    kinematic_model.set_absolute_constraint(
+        i, lower, upper, degrees=True
+    )  # Input in degrees
+
 parallelogram_limits = (-160.0, -30.0)  # relative limits for J3 relative to J2
 
 euler = EulerConvention("XYZ", extrinsic=False, degrees=True)  # Create Euler convention
 # ee_translation = (245, 0, -428)  # set the end-effector translation (TCP offset)
 ee_translation = (145.5, -353, -330.5)  # set the end-effector translation (TCP offset)
 ee_rotation = (0, -90, 0)  # set the end-effector rotation ($MC_ROBX_TFLWP_RPY)
-start_position_joints = (0, 0, -100, 0, 10, 0)
-
+start_position_joints = (
+    0,
+    0,
+    -100,
+    0,
+    10,
+    0,
+)  # set the current joint angles so that the robot is not in a singularity
 
 data = [
     {"X": 2000.0, "Y": 500.0, "Z": 1200.0, "A": 0.0, "B": 0.0, "C": 0.0},
@@ -80,7 +93,7 @@ kinematic_model.set_sum_constraint(  # J3 is axis 2, J2 is axis 1
     max_sum=parallelogram_limits[1],
     degrees=True,
 )
-kinematic_model.set_axis_limits(limits=axis_limits_nj165)
+kinematic_model.set_axis_limits(limits=axis_limits_nj290)
 robot_with_constraints = Robot(
     kinematic_model,
     euler,
