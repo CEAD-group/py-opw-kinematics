@@ -106,7 +106,6 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
                 c2=c2_sign * model.c2,
                 c3=c3_sign * model.c3,
                 c4=c4_sign * model.c4,
-                has_parallelogram=model.has_parallelogram,
                 offsets=(offset1, offset2, offset3, offset4, offset5, offset6),
                 flip_axes=(
                     bool(f1),
@@ -165,7 +164,6 @@ if __name__ == "__main__":
         c2=1177.556,
         c3=1443.593,
         c4=230,
-        has_parallelogram=True,
     )
 
     results = find_correct_configuration(
