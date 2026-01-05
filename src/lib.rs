@@ -153,14 +153,6 @@ impl Robot {
             }
         }
 
-        // Robot dimensions (meters)
-        let hoogte_as_1 = params.c1;      // c1
-        let lengte_as_1_2 = params.a1;    // a1
-        let lengte_arm_1 = params.c2;     // c2
-        let hoogte_3_4 = params.a2.abs(); // |a2|
-        let lengte_arm_2 = params.c3;     // c3
-        let afstand_5_flens = params.c4;  // c4
-
         let mut out: HashMap<String, Vec<f64>> = HashMap::new();
 
         // l0: Base at origin (fixed)
@@ -174,14 +166,14 @@ impl Robot {
         out.insert("robot_l1".to_string(), make_matrix_4x4(t1_rot, t1_pos));
 
         // l2: origin (a1, 0, c1), axis (0,1,0) => rotation_y(j2)
-        let j2_origin: Vec3 = [lengte_as_1_2, 0.0, hoogte_as_1];
+        let j2_origin: Vec3 = [params.a1, 0.0, params.c1];
         let t2_rot = mat_mult(t1_rot, rotation_y(j[1]));
         let d2 = mat_vec(t1_rot, j2_origin);
         let t2_pos: Vec3 = [t1_pos[0] + d2[0], t1_pos[1] + d2[1], t1_pos[2] + d2[2]];
         out.insert("robot_l2".to_string(), make_matrix_4x4(t2_rot, t2_pos));
 
         // l3: origin (0, 0, c2) with fixed rpy (0, -pi/2, 0), axis (0, -1, 0) => rotation_y(-j3)
-        let j3_origin: Vec3 = [0.0, 0.0, lengte_arm_1];
+        let j3_origin: Vec3 = [0.0, 0.0, params.c2];
         let d3 = mat_vec(t2_rot, j3_origin);
         let j3_pos: Vec3 = [t2_pos[0] + d3[0], t2_pos[1] + d3[1], t2_pos[2] + d3[2]];
 
@@ -190,7 +182,7 @@ impl Robot {
         out.insert("robot_l3".to_string(), make_matrix_4x4(t3_rot, j3_pos));
 
         // l4: origin (0, 0, |a2|), axis (-1, 0, 0) => rotation_x(-j4)
-        let j4_origin: Vec3 = [0.0, 0.0, hoogte_3_4];
+        let j4_origin: Vec3 = [0.0, 0.0, params.a2.abs()];
         let d4 = mat_vec(t3_rot, j4_origin);
         let j4_pos: Vec3 = [j3_pos[0] + d4[0], j3_pos[1] + d4[1], j3_pos[2] + d4[2]];
 
@@ -198,7 +190,7 @@ impl Robot {
         out.insert("robot_l4".to_string(), make_matrix_4x4(t4_rot, j4_pos));
 
         // l5: origin (c3, 0, 0), axis (0, 1, 0) => rotation_y(j5)
-        let j5_origin: Vec3 = [lengte_arm_2, 0.0, 0.0];
+        let j5_origin: Vec3 = [params.c3, 0.0, 0.0];
         let d5 = mat_vec(t4_rot, j5_origin);
         let j5_pos: Vec3 = [j4_pos[0] + d5[0], j4_pos[1] + d5[1], j4_pos[2] + d5[2]];
 
@@ -206,7 +198,7 @@ impl Robot {
         out.insert("robot_l5".to_string(), make_matrix_4x4(t5_rot, j5_pos));
 
         // l6: origin (c4, 0, 0), axis (-1, 0, 0) => rotation_x(-j6)
-        let j6_origin: Vec3 = [afstand_5_flens, 0.0, 0.0];
+        let j6_origin: Vec3 = [params.c4, 0.0, 0.0];
         let d6 = mat_vec(t5_rot, j6_origin);
         let j6_pos: Vec3 = [j5_pos[0] + d6[0], j5_pos[1] + d6[1], j5_pos[2] + d6[2]];
 
@@ -214,7 +206,7 @@ impl Robot {
         out.insert("robot_l6".to_string(), make_matrix_4x4(t6_rot, j6_pos));
 
         // l3 parallel short edge: origin (a1, 0, c1), axis (0,1,0) => rotation_y(j2)
-        let j3ps_origin: Vec3 = [lengte_as_1_2, 0.0, hoogte_as_1];
+        let j3ps_origin: Vec3 = [params.a1, 0.0, params.c1];
         let d3ps = mat_vec(t1_rot, j3ps_origin);
         let t3ps_pos: Vec3 = [t1_pos[0] + d3ps[0], t1_pos[1] + d3ps[1], t1_pos[2] + d3ps[2]];
 
