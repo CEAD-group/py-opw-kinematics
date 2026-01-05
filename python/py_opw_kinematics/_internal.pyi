@@ -12,7 +12,6 @@ class KinematicModel:
     c4: float
     offsets: Tuple[float, float, float, float, float, float]
     flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]]
-    has_parallelogram: bool
 
     def __init__(
         self,
@@ -25,15 +24,13 @@ class KinematicModel:
         c4: float = 0,
         offsets: Tuple[float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]] = (False, False, False, False, False, False),
-        has_parallelogram: bool = False,
     ) -> None:
         """
         Initialize a KinematicModel instance.
 
-        :param a1, a2, b, c1, c2, c3, c4: OPW kinematic parameters.
-        :param offsets: Joint angle offsets.
-        :param flip_axes: Boolean flags for flipping joint axes.
-        :param has_parallelogram: Whether the robot has a parallelogram linkage.
+        :param a1, a2, b, c1, c2, c3, c4: Kinematic parameters.
+        :param offsets: Joint offsets.
+        :param flip_axes: Boolean flags for flipping axes.
         """
         ...
 
