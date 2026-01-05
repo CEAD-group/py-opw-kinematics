@@ -14,7 +14,6 @@ use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 #[pyclass]
 struct Robot {
     robot: OPWKinematics,
-    has_parallelogram: bool,
     euler_convention: EulerConvention,
     ee_rotation: [f64; 3],
     ee_translation: Vector3<f64>,
@@ -34,7 +33,6 @@ impl Robot {
         ee_translation: Option<[f64; 3]>,
     ) -> PyResult<Self> {
         let robot = kinematic_model.to_opw_kinematics(euler_convention.degrees);
-        let has_parallelogram = kinematic_model.has_parallelogram;
         let degrees = euler_convention.degrees;
 
         // Initialize the internal rotation matrix to identity as a placeholder
@@ -45,7 +43,6 @@ impl Robot {
         // Create an instance with initial values
         let mut robot_instance = Robot {
             robot,
-            has_parallelogram,
             euler_convention,
             ee_rotation: ee_rotation.unwrap_or([0.0, 0.0, 0.0]),
             ee_translation: ee_translation.unwrap_or([0.0, 0.0, 0.0]).into(),
@@ -103,9 +100,6 @@ impl Robot {
 
     /// Forward kinematics: calculates the pose for given joints
     fn forward(&self, mut joints: [f64; 6]) -> ([f64; 3], [f64; 3]) {
-        if self.has_parallelogram {
-            joints[2] += joints[1];
-        }
         if self.euler_convention.degrees {
             joints.iter_mut().for_each(|x| *x = x.to_radians());
         }
@@ -130,9 +124,6 @@ impl Robot {
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = match current_joints {
             Some(mut joints) => {
-                if self.has_parallelogram {
-                    joints[2] += joints[1];
-                }
                 if self.euler_convention.degrees {
                     joints.iter_mut().for_each(|x| *x = x.to_radians());
                 }
@@ -140,10 +131,6 @@ impl Robot {
             }
             None => self.robot.inverse(&iso_pose),
         };
-
-        if self.has_parallelogram {
-            solutions.iter_mut().for_each(|x| x[2] -= x[1]);
-        }
 
         if self.euler_convention.degrees {
             solutions.iter_mut().for_each(|x| {

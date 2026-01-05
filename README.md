@@ -36,8 +36,6 @@ manufacturer's position. The direction of each of the axes can be flipped with t
 
 Additionally, you can specify the Euler convention to use for the end-effector rotation. The `EulerConvention` class allows you to specify the order of the rotations and whether they are extrinsic or intrinsic. The `degrees` parameter can be set to `True` to use degrees instead of radians.
 
-If the robot has a parallelogram between joints 2 and 3, set `has_parallelogram` to `True` to link these axes. 
-
 Below is a basic example demonstrating how to define a robot, configure Euler conventions, and compute forward kinematics.
 
 Single Operation Example
@@ -57,7 +55,6 @@ kinematic_model = KinematicModel(
     c4=230,
     offsets=(0,0,0,0,0,0),
     flip_axes=(True, False, True, True, False, True),
-    has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
 robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))

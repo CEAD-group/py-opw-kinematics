@@ -95,7 +95,6 @@ class KinematicModel:
     c4: float
     offsets: Tuple[float, float, float, float, float, float]
     flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]]
-    has_parallelogram: bool
 
     def __init__(
         self,
@@ -122,7 +121,6 @@ class KinematicModel:
             False,
             False,
         ),
-        has_parallelogram: bool = False,
     ) -> None:
         """
         Initializes a KinematicModel instance.
@@ -130,7 +128,6 @@ class KinematicModel:
         :param a1, a2, b, c1, c2, c3, c4: Kinematic parameters.
         :param offsets: Joint offsets.
         :param flip_axes: Boolean flags for flipping axes.
-        :param has_parallelogram: Indicates if the model has a parallelogram linkage.
         """
         ...
 
@@ -204,9 +201,7 @@ class Robot:
         """
         ...
 
-    def batch_forward(
-        self, joints: npt.NDArray[np.float64]
-    ) -> npt.NDArray[np.float64]:
+    def batch_forward(self, joints: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         Computes the forward kinematics for multiple sets of joint angles in batch mode.
 
