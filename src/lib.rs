@@ -137,16 +137,18 @@ impl Robot {
         let mut j = joints;
         let params = &self._kinematic_model;
 
-        // Python: degrees -> radians first
+        // Convert degrees to radians if needed
         if self.euler_convention.degrees {
             j.iter_mut().for_each(|x| *x = x.to_radians());
         }
 
         let j2_original = j[2];
-        // Python: parallelogram after radians
+        // Apply parallelogram constraint
         if self.has_parallelogram {
             j[2] = j[1] + j[2];
         }
+
+        // Apply flip_axes (sign corrections) to joint angles
         for i in 0..6 {
             if params.flip_axes[i] {
                 j[i] = -j[i];
@@ -154,75 +156,70 @@ impl Robot {
         }
 
         let mut out: HashMap<String, Vec<f64>> = HashMap::new();
+        let mut t: nalgebra::Isometry3<f64> = nalgebra::Isometry3::identity();
 
-        // l0: Base at origin (fixed)
-        let t0_rot = identity_rot();
-        let t0_pos: Vec3 = [0.0, 0.0, 0.0];
-        out.insert("robot_l0".to_string(), make_matrix_4x4(t0_rot, t0_pos));
+        // Helper function to convert Isometry3 to column-major 4x4 matrix
+        let to_matrix_4x4 = |iso: &nalgebra::Isometry3<f64>| -> Vec<f64> {
+            let matrix = iso.to_matrix();
+            vec![
+                matrix[(0, 0)], matrix[(1, 0)], matrix[(2, 0)], 0.0,
+                matrix[(0, 1)], matrix[(1, 1)], matrix[(2, 1)], 0.0,
+                matrix[(0, 2)], matrix[(1, 2)], matrix[(2, 2)], 0.0,
+                matrix[(0, 3)], matrix[(1, 3)], matrix[(2, 3)], 1.0,
+            ]
+        };
 
-        // l1: rotation around Z axis, axis is -Z => rotation_z(-j1)
-        let t1_rot = rotation_z(-j[0]);
-        let t1_pos: Vec3 = [0.0, 0.0, 0.0];
-        out.insert("robot_l1".to_string(), make_matrix_4x4(t1_rot, t1_pos));
+        // l0: Base at origin (identity transform)
+        out.insert("robot_l0".to_string(), to_matrix_4x4(&t));
 
-        // l2: origin (a1, 0, c1), axis (0,1,0) => rotation_y(j2)
-        let j2_origin: Vec3 = [params.a1, 0.0, params.c1];
-        let t2_rot = mat_mult(t1_rot, rotation_y(j[1]));
-        let d2 = mat_vec(t1_rot, j2_origin);
-        let t2_pos: Vec3 = [t1_pos[0] + d2[0], t1_pos[1] + d2[1], t1_pos[2] + d2[2]];
-        out.insert("robot_l2".to_string(), make_matrix_4x4(t2_rot, t2_pos));
+        // l1: rotation around Z axis (negated to match original)
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), -corrected_joints[0]);
+        out.insert("robot_l1".to_string(), to_matrix_4x4(&t));
 
-        // l3: origin (0, 0, c2) with fixed rpy (0, -pi/2, 0), axis (0, -1, 0) => rotation_y(-j3)
-        let j3_origin: Vec3 = [0.0, 0.0, params.c2];
-        let d3 = mat_vec(t2_rot, j3_origin);
-        let j3_pos: Vec3 = [t2_pos[0] + d3[0], t2_pos[1] + d3[1], t2_pos[2] + d3[2]];
+        // l2: translate by (a1, 0, c1), then rotate around Y
+        t *= nalgebra::Translation3::new(params.a1, 0.0, params.c1);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[1]);
+        out.insert("robot_l2".to_string(), to_matrix_4x4(&t));
 
-        let mut t3_rot = mat_mult(t2_rot, rotation_y(-PI / 2.0));
-        t3_rot = mat_mult(t3_rot, rotation_y(j[2]));
-        out.insert("robot_l3".to_string(), make_matrix_4x4(t3_rot, j3_pos));
+        // l3: translate by (0, 0, c2), apply fixed rotation (-pi/2 around Y), then rotate around Y
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c2);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -PI / 2.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[2]);
+        out.insert("robot_l3".to_string(), to_matrix_4x4(&t));
 
-        // l4: origin (0, 0, |a2|), axis (-1, 0, 0) => rotation_x(-j4)
-        let j4_origin: Vec3 = [0.0, 0.0, params.a2.abs()];
-        let d4 = mat_vec(t3_rot, j4_origin);
-        let j4_pos: Vec3 = [j3_pos[0] + d4[0], j3_pos[1] + d4[1], j3_pos[2] + d4[2]];
+        // l4: translate by (0, 0, |a2|), then rotate around X (negated)
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.a2.abs());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -corrected_joints[3]);
+        out.insert("robot_l4".to_string(), to_matrix_4x4(&t));
 
-        let t4_rot = mat_mult(t3_rot, rotation_x(-j[3]));
-        out.insert("robot_l4".to_string(), make_matrix_4x4(t4_rot, j4_pos));
+        // l5: translate by (c3, 0, 0), then rotate around Y
+        t *= nalgebra::Translation3::new(params.c3, 0.0, 0.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), corrected_joints[4]);
+        out.insert("robot_l5".to_string(), to_matrix_4x4(&t));
 
-        // l5: origin (c3, 0, 0), axis (0, 1, 0) => rotation_y(j5)
-        let j5_origin: Vec3 = [params.c3, 0.0, 0.0];
-        let d5 = mat_vec(t4_rot, j5_origin);
-        let j5_pos: Vec3 = [j4_pos[0] + d5[0], j4_pos[1] + d5[1], j4_pos[2] + d5[2]];
+        // l6: translate by (c4, 0, 0), then rotate around X (negated)
+        t *= nalgebra::Translation3::new(params.c4, 0.0, 0.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -corrected_joints[5]);
+        out.insert("robot_l6".to_string(), to_matrix_4x4(&t));
 
-        let t5_rot = mat_mult(t4_rot, rotation_y(j[4]));
-        out.insert("robot_l5".to_string(), make_matrix_4x4(t5_rot, j5_pos));
+        // For parallelogram links, we need to go back to earlier transforms
+        if self.has_parallelogram {
+            // l7: parallel short edge - similar to l2 but with original j2 angle
+            let mut t_parallel = nalgebra::Isometry3::identity();
+            t_parallel *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), -corrected_joints[0]);
+            t_parallel *= nalgebra::Translation3::new(params.a1, 0.0, params.c1);
+            t_parallel *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -PI / 2.0);
+            
+            let j2_corrected_original = j2_original * if params.flip_axes[1] { -1.0 } else { 1.0 };
+            t_parallel *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), j2_corrected_original);
+            out.insert("robot_l7".to_string(), to_matrix_4x4(&t_parallel));
 
-        // l6: origin (c4, 0, 0), axis (-1, 0, 0) => rotation_x(-j6)
-        let j6_origin: Vec3 = [params.c4, 0.0, 0.0];
-        let d6 = mat_vec(t5_rot, j6_origin);
-        let j6_pos: Vec3 = [j5_pos[0] + d6[0], j5_pos[1] + d6[1], j5_pos[2] + d6[2]];
-
-        let t6_rot = mat_mult(t5_rot, rotation_x(-j[5]));
-        out.insert("robot_l6".to_string(), make_matrix_4x4(t6_rot, j6_pos));
-
-        // l3 parallel short edge: origin (a1, 0, c1), axis (0,1,0) => rotation_y(j2)
-        let j3ps_origin: Vec3 = [params.a1, 0.0, params.c1];
-        let d3ps = mat_vec(t1_rot, j3ps_origin);
-        let t3ps_pos: Vec3 = [t1_pos[0] + d3ps[0], t1_pos[1] + d3ps[1], t1_pos[2] + d3ps[2]];
-
-        let mut t3ps_rot = mat_mult(t1_rot, rotation_y(-PI / 2.0));;
-        t3ps_rot = mat_mult(t3ps_rot, rotation_y(j2_original));
-        out.insert("robot_l7".to_string(), make_matrix_4x4(t3ps_rot, t3ps_pos));
-
-        // l3 parallel long edge: origin (a1, 0, c1), axis (0,1,0) => rotation_y(j2)
-        let j3pl_origin: Vec3 = [-0.400, 0.0, 0.0];
-        let d3pl = mat_vec(t3ps_rot, j3pl_origin);
-        let t3pl_pos: Vec3 = [t3ps_pos[0] + d3pl[0], t3ps_pos[1] + d3pl[1], t3ps_pos[2] + d3pl[2]];
-        
-        let mut t3pl_rot = mat_mult(t3ps_rot, rotation_y(-PI / 2.0));;
-        t3pl_rot = mat_mult(t3pl_rot, rotation_y(-j[2]));
-        
-        out.insert("robot_l8".to_string(), make_matrix_4x4(t3pl_rot, t3pl_pos));
+            // l8: parallel long edge
+            t_parallel *= nalgebra::Translation3::new(-0.400, 0.0, 0.0);
+            t_parallel *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -PI / 2.0);
+            t_parallel *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -corrected_joints[2]);
+            out.insert("robot_l8".to_string(), to_matrix_4x4(&t_parallel));
+        }
 
         out
     }
@@ -740,74 +737,6 @@ impl Robot {
         
         Ok((config.stat_tu_string, stat_bits.to_bits(), stat_bits.to_binary_string(), tu_bits.to_bits(), tu_bits.to_binary_string()))
     }
-}
-
-use std::f64::consts::PI;
-
-pub type Mat3 = [[f64; 3]; 3];
-pub type Vec3 = [f64; 3];
-
-pub fn identity_rot() -> Mat3 {
-    [
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ]
-}
-
-pub fn rotation_x(angle: f64) -> Mat3 {
-    let (s, c) = angle.sin_cos();
-    [
-        [1.0, 0.0, 0.0],
-        [0.0, c, -s],
-        [0.0, s, c],
-    ]
-}
-
-pub fn rotation_y(angle: f64) -> Mat3 {
-    let (s, c) = angle.sin_cos();
-    [
-        [c, 0.0, s],
-        [0.0, 1.0, 0.0],
-        [-s, 0.0, c],
-    ]
-}
-
-pub fn rotation_z(angle: f64) -> Mat3 {
-    let (s, c) = angle.sin_cos();
-    [
-        [c, -s, 0.0],
-        [s, c, 0.0],
-        [0.0, 0.0, 1.0],
-    ]
-}
-
-pub fn mat_mult(a: Mat3, b: Mat3) -> Mat3 {
-    let mut out = [[0.0; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
-        }
-    }
-    out
-}
-
-pub fn mat_vec(m: Mat3, v: Vec3) -> Vec3 {
-    [
-        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
-        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
-        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
-    ]
-}
-
-/// Exact match for Python `make_matrix_4x4` (column-major, Three.js)
-pub fn make_matrix_4x4(rot: Mat3, pos: Vec3) -> Vec<f64> {
-    vec![
-        rot[0][0], rot[1][0], rot[2][0], 0.0,
-        rot[0][1], rot[1][1], rot[2][1], 0.0,
-        rot[0][2], rot[1][2], rot[2][2], 0.0,
-        pos[0],    pos[1],    pos[2],    1.0,
-    ]
 }
 
 /// Python wrapper for robot kinematic parameters
