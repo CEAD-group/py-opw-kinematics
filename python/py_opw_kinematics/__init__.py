@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from typing import Tuple
+
 from ._internal import EulerConvention, KinematicModel, Robot as _Robot
 
 
-def _compute_link_transforms_py(self: _Robot, joints_deg):
+def _compute_link_transforms_py(
+    self: _Robot, joints_deg: Tuple[float, float, float, float, float, float]
+) -> OrderedDict[str, dict]:
     """
     Wrap Rust output:
       {"robot_l0": [..16..], ...}
