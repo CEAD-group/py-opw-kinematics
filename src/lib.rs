@@ -202,6 +202,15 @@ impl Robot {
         t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -corrected_joints[5]);
         out.insert("robot_l6".to_string(), to_matrix_4x4(&t));
 
+        // TCP: Apply end effector transformation
+        let combined_rotation = t.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
+        let final_translation = t.translation.vector + combined_rotation * self.ee_translation;
+        let tcp_transform = nalgebra::Isometry3::from_parts(
+            nalgebra::Translation3::from(final_translation),
+            nalgebra::UnitQuaternion::from_rotation_matrix(&combined_rotation)
+        );
+        out.insert("robot_tcp".to_string(), to_matrix_4x4(&tcp_transform));
+
         // For parallelogram links, we need to go back to earlier transforms
         if self.has_parallelogram {
             // l7: parallel short edge - similar to l2 but with original j2 angle

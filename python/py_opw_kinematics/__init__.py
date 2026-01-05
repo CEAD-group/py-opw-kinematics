@@ -28,6 +28,7 @@ def _compute_link_transforms_py(
         "robot_l6",
         "robot_l7",
         "robot_l8",
+        "robot_tcp",
     )
     out = OrderedDict()
 
