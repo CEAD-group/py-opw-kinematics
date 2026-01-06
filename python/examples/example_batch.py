@@ -1,5 +1,6 @@
 # %%
 from py_opw_kinematics import KinematicModel, Robot, EulerConvention
+from scipy.spatial.transform import RigidTransform, Rotation
 import numpy as np
 import polars as pl
 
@@ -16,7 +17,11 @@ kinematic_model = KinematicModel(
     has_parallelogram=True,
 )
 euler_convention = EulerConvention("XYZ", extrinsic=True, degrees=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
+robot = Robot(kinematic_model, euler_convention)
+
+# Create the EE transformation that was previously set in constructor  
+ee_rotation = Rotation.from_euler('XYZ', [0, -90, 0], degrees=True)
+ee_transform = RigidTransform.from_components(rotation=ee_rotation, translation=[0, 0, 0])
 
 n = 100000
 poses = pl.DataFrame(
@@ -31,7 +36,7 @@ poses = pl.DataFrame(
 )
 
 
-res = robot.batch_inverse(current_joints=(0, 0, -90, 0, 0, 0), poses=poses)
+res = robot.batch_inverse(current_joints=(0, 0, -90, 0, 0, 0), poses=poses, ee_transform=ee_transform)
 
 print(res)
 # %%

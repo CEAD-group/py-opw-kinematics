@@ -105,12 +105,16 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
                 flip_axes=(f1, f2, f3, f4, f5, f6),
             ),
             EulerConvention("XYZ", extrinsic=extrinsic, degrees=degrees),
-            ee_rotation=(ee_A, ee_B, ee_C),
         )
 
         # Test each known joint position against the expected transformation
         for joints, xyz, abc in observations:
-            t, r = robot.forward(joints=joints)
+            # Create EE transform from the tested parameters
+            from scipy.spatial.transform import RigidTransform, Rotation
+            ee_rotation = Rotation.from_euler('XYZ', [ee_A, ee_B, ee_C], degrees=degrees)
+            ee_transform = RigidTransform.from_components(rotation=ee_rotation, translation=[0, 0, 0])
+            
+            t, r = robot.forward(joints=joints, ee_transform=ee_transform)
 
             # Assert that computed and expected values are approximately equal
             if not (np.allclose(t, xyz, atol=1e-2) and np.allclose(r, abc, atol=1e-2)):

@@ -1,5 +1,6 @@
 # %%
 from py_opw_kinematics import KinematicModel, Robot, EulerConvention
+from scipy.spatial.transform import RigidTransform, Rotation
 import numpy as np
 
 
@@ -19,7 +20,11 @@ kinematic_model = KinematicModel(
 euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
 
 np.set_printoptions(precision=2, suppress=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=(0.0, -90.0, 0))
+robot = Robot(kinematic_model, euler_convention)
+
+# Create the EE transformation that was previously set in constructor
+ee_rotation = Rotation.from_euler('XYZ', [0.0, -90.0, 0.0], degrees=True) 
+ee_transform = RigidTransform.from_components(rotation=ee_rotation, translation=[0, 0, 0])
 
 
 # %%
@@ -33,7 +38,7 @@ for angles, t_exp, r_exp in [
     ((0, 0, -90, 0, 0, 10), (2074.0, 0.0, 2255.0), (-10.0, 0.0, 0.0)),
     ((10, 20, -90, 30, 20, 10), (2417.77, -466.26, 2116.01), (-37.35, 25.99, -4.81)),
 ]:
-    t, r = robot.forward(joints=angles)
+    t, r = robot.forward(joints=angles, ee_transform=ee_transform)
     pos, rot = (np.allclose(t, t_exp, atol=1e-2), np.allclose(r, r_exp, atol=1e-2))
     if not rot:
         print(angles, np.array(r), np.array(r_exp))
