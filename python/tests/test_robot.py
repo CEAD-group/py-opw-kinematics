@@ -116,8 +116,8 @@ def test_robot_inverse_with_ee_translation(
 
     joint_solutions = robot.inverse(
         (
-            [2396.467, -743.091, 1572.479],
-            [-37.346, 25.987, -4.814],
+            (2396.467, -743.091, 1572.479),
+            (-37.346, 25.987, -4.814),
         ),
         ee_transform=ee_transform,
     )
