@@ -17,6 +17,8 @@ dependencies = [
     "maturin>=1.7.4",
     "polars[pyarrow,numpy]>=1.22.0,!=1.32.*",
     "numpy>=1.26.4",
+    "scipy>=1.8.0",
+    "scipy-stubs",
     "jupyter>=1.1.1",
 ]
 
@@ -26,9 +28,7 @@ dev = [
 ]
 test = [
     "pytest",
-    "scipy",
     "mypy",
-    "scipy-stubs"
 ]
 
 [tool.maturin]
