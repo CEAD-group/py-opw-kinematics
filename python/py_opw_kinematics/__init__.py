@@ -2,6 +2,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import polars as pl
+from scipy.spatial.transform import RigidTransform
 
 from ._internal import EulerConvention, KinematicModel
 from ._internal import Robot as _RobotInternal
@@ -129,5 +130,41 @@ class Robot:
             }
         )
 
+    def forward_frames(
+        self, joints: Tuple[float, float, float, float, float, float]
+    ) -> pl.DataFrame:
+        """
+        Compute 4x4 transform matrices for all robot links.
 
-__all__ = ["EulerConvention", "KinematicModel", "Robot"]
+        :param joints: Joint angles of the robot
+        :return: DataFrame with columns 'link' and 'transform'
+                 where 'transform' contains RigidTransform objects
+        """
+        # Get raw matrices from Rust (Vec<[[f64; 4]; 4]>)
+        raw_frames = self._robot.forward_frames(joints)
+
+        # Link names in order
+        link_names = [
+            "Base",
+            "J1",
+            "J2",
+            "J3",
+            "J4",
+            "J5",
+            "J6",
+            "TCP",
+        ]
+
+        # Convert all matrices to numpy array at once
+        matrices_array = np.array(raw_frames)  # Shape: (8, 4, 4)
+
+        # Create RigidTransforms efficiently
+        transforms = [
+            RigidTransform.from_matrix(matrices_array[i])
+            for i in range(len(link_names))
+        ]
+
+        return pl.DataFrame({"link": link_names, "transform": transforms})
+
+
+__all__ = ["EulerConvention", "KinematicModel", "Robot", "RigidTransform"]

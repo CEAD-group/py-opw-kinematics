@@ -241,6 +241,88 @@ impl Robot {
 
         Ok(result_array.into_pyarray(py).into())
     }
+
+    /// Compute 4x4 transform matrices for all robot links
+    /// Returns: Vec<[[f64; 4]; 4]> where each element is a 4x4 matrix (row-major)
+    /// Order: [l0, l1, l2, l3, l4, l5, l6, tcp]
+    #[pyo3(signature = (joints))]
+    fn forward_frames(&self, joints: [f64; 6]) -> Vec<[[f64; 4]; 4]> {
+        use std::f64::consts::PI;
+
+        // Create a mutable copy for processing
+        let mut j = joints;
+        let params = &self._kinematic_model;
+
+        // Convert degrees to radians if needed
+        if self.euler_convention.degrees {
+            j.iter_mut().for_each(|x| *x = x.to_radians());
+        }
+
+        // Apply flip_axes (sign corrections) to joint angles
+        for i in 0..6 {
+            if params.flip_axes[i] {
+                j[i] = -j[i];
+            }
+        }
+
+        let mut out: Vec<[[f64; 4]; 4]> = Vec::with_capacity(8);
+        let mut t: nalgebra::Isometry3<f64> = nalgebra::Isometry3::identity();
+
+        // Helper function to convert Isometry3 to 4x4 matrix (row-major)
+        let to_matrix_4x4 = |iso: &nalgebra::Isometry3<f64>| -> [[f64; 4]; 4] {
+            let matrix = iso.to_matrix();
+            [
+                [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)], matrix[(0, 3)]],
+                [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)], matrix[(1, 3)]],
+                [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)], matrix[(2, 3)]],
+                [0.0,             0.0,             0.0,             1.0],
+            ]
+        };
+
+        // l0: Base at origin (identity transform)
+        out.push(to_matrix_4x4(&t));
+
+        // l1: rotation around Z axis (negated to match original)
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), -j[0]);
+        out.push(to_matrix_4x4(&t));
+
+        // l2: translate by (a1, 0, c1), then rotate around Y
+        t *= nalgebra::Translation3::new(params.a1, 0.0, params.c1);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), j[1]);
+        out.push(to_matrix_4x4(&t));
+
+        // l3: translate by (0, 0, c2), apply fixed rotation (-pi/2 around Y), then rotate around Y
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.c2);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -PI / 2.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), j[2]);
+        out.push(to_matrix_4x4(&t));
+
+        // l4: translate by (0, 0, |a2|), then rotate around X (negated)
+        t *= nalgebra::Translation3::new(0.0, 0.0, params.a2.abs());
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -j[3]);
+        out.push(to_matrix_4x4(&t));
+
+        // l5: translate by (c3, 0, 0), then rotate around Y
+        t *= nalgebra::Translation3::new(params.c3, 0.0, 0.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), j[4]);
+        out.push(to_matrix_4x4(&t));
+
+        // l6: translate by (c4, 0, 0), then rotate around X (negated)
+        t *= nalgebra::Translation3::new(params.c4, 0.0, 0.0);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -j[5]);
+        out.push(to_matrix_4x4(&t));
+
+        // TCP: Apply end effector transformation
+        let combined_rotation = t.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
+        let final_translation = t.translation.vector + combined_rotation * self.ee_translation;
+        let tcp_transform = nalgebra::Isometry3::from_parts(
+            nalgebra::Translation3::from(final_translation),
+            nalgebra::UnitQuaternion::from_rotation_matrix(&combined_rotation)
+        );
+        out.push(to_matrix_4x4(&tcp_transform));
+
+        out
+    }
 }
 
 /// Module initialization for Python
