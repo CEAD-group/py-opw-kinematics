@@ -135,23 +135,16 @@ class KinematicModel:
         ...
 
 class Robot:
-    ee_rotation: Tuple[float, float, float]
-    ee_translation: Tuple[float, float, float]
-
     def __init__(
         self,
         kinematic_model: KinematicModel,
         euler_convention: EulerConvention,
-        ee_rotation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
-        ee_translation: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> None:
         """
         Initializes a Robot instance.
 
         :param kinematic_model: The kinematic model of the robot.
         :param euler_convention: Euler convention used for end-effector rotation.
-        :param ee_rotation: Initial rotation of the end-effector.
-        :param ee_translation: Initial translation of the end-effector.
         """
         ...
 
@@ -162,12 +155,15 @@ class Robot:
         ...
 
     def forward(
-        self, joints: Tuple[float, float, float, float, float, float]
+        self, 
+        joints: Tuple[float, float, float, float, float, float],
+        ee_transform: Optional[npt.NDArray[np.float64]] = None
     ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         """
         Computes the forward kinematics for the given joint angles.
 
         :param joints: Joint angles of the robot.
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: A tuple containing the position and orientation of the end-effector.
         """
         ...
@@ -178,12 +174,14 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
     ) -> List[Tuple[float, float, float, float, float, float]]:
         """
         Computes the inverse kinematics for a given pose.
 
         :param pose: Desired pose (position and orientation) of the end-effector.
         :param current_joints: Current joint configuration (optional).
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
         ...
@@ -194,24 +192,43 @@ class Robot:
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
     ) -> npt.NDArray[np.float64]:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
         :param poses: NumPy array of shape (n, 6) with columns [X, Y, Z, A, B, C].
         :param current_joints: Current joint configuration (optional).
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: NumPy array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6].
         """
         ...
 
     def batch_forward(
-        self, joints: npt.NDArray[np.float64]
+        self, 
+        joints: npt.NDArray[np.float64],
+        ee_transform: Optional[npt.NDArray[np.float64]] = None
     ) -> npt.NDArray[np.float64]:
         """
         Computes the forward kinematics for multiple sets of joint angles in batch mode.
 
         :param joints: NumPy array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6].
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: NumPy array of shape (n, 6) with columns [X, Y, Z, A, B, C].
+        """
+        ...
+
+    def forward_frames(
+        self, 
+        joints: Tuple[float, float, float, float, float, float],
+        ee_transform: Optional[npt.NDArray[np.float64]] = None
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Computes the forward kinematics for all joint frames.
+
+        :param joints: Joint angles of the robot.
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
+        :return: A list of 4x4 transformation matrices for each joint frame.
         """
         ...
 
