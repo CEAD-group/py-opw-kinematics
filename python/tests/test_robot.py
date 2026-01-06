@@ -2,9 +2,7 @@ from py_opw_kinematics import Robot, EulerConvention, KinematicModel
 import numpy as np
 import pytest
 import polars as pl
-from scipy.spatial.transform import RigidTransform
-from typing import List
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import RigidTransform, Rotation
 
 
 @pytest.fixture
