@@ -16,9 +16,6 @@ struct Robot {
     robot: OPWKinematics,
     has_parallelogram: bool,
     euler_convention: EulerConvention,
-    ee_rotation: [f64; 3],
-    ee_translation: Vector3<f64>,
-    _ee_rotation_matrix: Rotation3<f64>,
     _internal_euler_convention: EulerConvention,
     _kinematic_model: KinematicModel,
 }
@@ -26,38 +23,23 @@ struct Robot {
 #[pymethods]
 impl Robot {
     #[new]
-    #[pyo3(signature = (kinematic_model, euler_convention, ee_rotation=None, ee_translation=None))]
     fn new(
         kinematic_model: KinematicModel,
         euler_convention: EulerConvention,
-        ee_rotation: Option<[f64; 3]>,
-        ee_translation: Option<[f64; 3]>,
     ) -> PyResult<Self> {
         let robot = kinematic_model.to_opw_kinematics(euler_convention.degrees);
         let has_parallelogram = kinematic_model.has_parallelogram;
         let degrees = euler_convention.degrees;
 
-        // Initialize the internal rotation matrix to identity as a placeholder
-        let _ee_rotation_matrix = Rotation3::identity(); // Assuming Rotation3::identity() is a valid way to initialize to identity
-
         let _internal_euler_convention = EulerConvention::new("XYZ".to_string(), false, degrees)?;
 
-        // Create an instance with initial values
-        let mut robot_instance = Robot {
+        Ok(Robot {
             robot,
             has_parallelogram,
             euler_convention,
-            ee_rotation: ee_rotation.unwrap_or([0.0, 0.0, 0.0]),
-            ee_translation: ee_translation.unwrap_or([0.0, 0.0, 0.0]).into(),
-            _ee_rotation_matrix,
             _internal_euler_convention,
             _kinematic_model: kinematic_model,
-        };
-
-        // Use the setter to assign ee_rotation if provided
-        robot_instance.set_ee_rotation(robot_instance.ee_rotation)?;
-
-        Ok(robot_instance)
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -70,39 +52,20 @@ impl Robot {
             .join("\n");
 
         format!(
-            "Robot(\n    kinematic_model=\n{},\n    euler_convention={},\n    ee_rotation={:?},\n    ee_translation={:?}\n)",
+            "Robot(\n    kinematic_model=\n{},\n    euler_convention={}\n)",
             km_repr,
-            self.euler_convention.__repr__(),
-            self.ee_rotation,
-            self.ee_translation
+            self.euler_convention.__repr__()
         )
     }
 
-    #[getter]
-    fn get_ee_rotation(&self) -> PyResult<[f64; 3]> {
-        let euler_angles = self
-            .euler_convention
-            ._matrix_to_euler(self._ee_rotation_matrix);
-        Ok(euler_angles)
-    }
-
-    #[setter]
-    fn set_ee_rotation(&mut self, ee_rotation: [f64; 3]) -> PyResult<()> {
-        self._ee_rotation_matrix = self.euler_convention._euler_to_matrix(ee_rotation);
-        Ok(())
-    }
-
-    #[getter]
-    fn get_ee_translation(&self) -> [f64; 3] {
-        self.ee_translation.into()
-    }
-    #[setter]
-    fn set_ee_translation(&mut self, ee_translation: [f64; 3]) {
-        self.ee_translation = ee_translation.into();
-    }
-
-    /// Forward kinematics: calculates the pose for given joints
-    fn forward(&self, mut joints: [f64; 6]) -> ([f64; 3], [f64; 3]) {
+    /// Forward kinematics with RigidTransform input (4x4 matrix)
+    /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
+    #[pyo3(signature = (joints, ee_transform=None))]
+    fn forward(
+        &self, 
+        mut joints: [f64; 6],
+        ee_transform: Option<[[f64; 4]; 4]>
+    ) -> ([f64; 3], [f64; 3]) {
         if self.has_parallelogram {
             joints[2] += joints[1];
         }
@@ -110,23 +73,58 @@ impl Robot {
             joints.iter_mut().for_each(|x| *x = x.to_radians());
         }
         let pose: Pose = self.robot.forward(&joints);
-        let combined_rotation = pose.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
-        let translation = pose.translation.vector + combined_rotation * self.ee_translation;
-        let rotation = self.euler_convention._matrix_to_euler(combined_rotation);
-
-        (translation.into(), rotation)
+        
+        if let Some(ee_matrix) = ee_transform {
+            // Convert 4x4 matrix to nalgebra components
+            let matrix = nalgebra::Matrix4::from_row_slice(&[
+                ee_matrix[0][0], ee_matrix[0][1], ee_matrix[0][2], ee_matrix[0][3],
+                ee_matrix[1][0], ee_matrix[1][1], ee_matrix[1][2], ee_matrix[1][3], 
+                ee_matrix[2][0], ee_matrix[2][1], ee_matrix[2][2], ee_matrix[2][3],
+                ee_matrix[3][0], ee_matrix[3][1], ee_matrix[3][2], ee_matrix[3][3]
+            ]);
+            
+            let ee_rotation_matrix = Rotation3::from_matrix_unchecked(matrix.fixed_view::<3, 3>(0, 0).into());
+            let ee_translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            
+            let combined_rotation = pose.rotation.to_rotation_matrix() * ee_rotation_matrix;
+            let translation: Vector3<f64> = pose.translation.vector + combined_rotation * &ee_translation;
+            let rotation = self.euler_convention._matrix_to_euler(combined_rotation);
+            
+            (translation.into(), rotation)
+        } else {
+            // No end effector transformation (identity)
+            let rotation = self.euler_convention._matrix_to_euler(pose.rotation.to_rotation_matrix());
+            (pose.translation.vector.into(), rotation)
+        }
     }
 
-    #[pyo3(signature = (pose, current_joints=None))]
+    /// Inverse kinematics with RigidTransform input
+    /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
+    #[pyo3(signature = (pose, current_joints=None, ee_transform=None))]
     fn inverse(
         &self,
         pose: ([f64; 3], [f64; 3]),
         current_joints: Option<[f64; 6]>,
+        ee_transform: Option<[[f64; 4]; 4]>
     ) -> Vec<[f64; 6]> {
+        let (ee_rotation_matrix, ee_translation_vec) = if let Some(ee_matrix) = ee_transform {
+            let matrix = nalgebra::Matrix4::from_row_slice(&[
+                ee_matrix[0][0], ee_matrix[0][1], ee_matrix[0][2], ee_matrix[0][3],
+                ee_matrix[1][0], ee_matrix[1][1], ee_matrix[1][2], ee_matrix[1][3], 
+                ee_matrix[2][0], ee_matrix[2][1], ee_matrix[2][2], ee_matrix[2][3],
+                ee_matrix[3][0], ee_matrix[3][1], ee_matrix[3][2], ee_matrix[3][3]
+            ]);
+            let rot = Rotation3::from_matrix_unchecked(matrix.fixed_view::<3, 3>(0, 0).into());
+            let trans: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            (rot, trans)
+        } else {
+            (Rotation3::identity(), Vector3::zeros())
+        };
+        
         let rotation_matrix = self.euler_convention._euler_to_matrix(pose.1);
-        let rotated_ee_translation = rotation_matrix * Vector3::from(self.ee_translation);
+        let rotated_ee_translation = rotation_matrix * &ee_translation_vec;
         let translation = Translation3::from(Vector3::from(pose.0) - rotated_ee_translation);
-        let rotation = rotation_matrix * self._ee_rotation_matrix.inverse();
+        let rotation = rotation_matrix * ee_rotation_matrix.inverse();
         let iso_pose = Isometry3::from_parts(translation, rotation.into());
         let mut solutions = match current_joints {
             Some(mut joints) => {
@@ -156,16 +154,18 @@ impl Robot {
         solutions
     }
 
-    /// Batch inverse kinematics using NumPy arrays.
+    /// Batch inverse kinematics with RigidTransform input
     /// Input: poses array of shape (n, 6) with columns [X, Y, Z, A, B, C]
     /// Output: joints array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6]
     /// Returns NaN for rows where no solution is found.
-    #[pyo3(signature = (poses, current_joints=None))]
+    /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
+    #[pyo3(signature = (poses, current_joints=None, ee_transform=None))]
     fn batch_inverse<'py>(
         &self,
         py: Python<'py>,
         poses: PyReadonlyArray2<'py, f64>,
         mut current_joints: Option<[f64; 6]>,
+        ee_transform: Option<[[f64; 4]; 4]>,
     ) -> PyResult<Py<PyArray2<f64>>> {
         let poses_array = poses.as_array();
         let n = poses_array.nrows();
@@ -183,7 +183,7 @@ impl Robot {
 
             let pose = ([row[0], row[1], row[2]], [row[3], row[4], row[5]]);
 
-            let solutions = self.inverse(pose, current_joints);
+            let solutions = self.inverse(pose, current_joints, ee_transform);
             if let Some(best_solution) = solutions.first() {
                 results.extend_from_slice(best_solution);
                 current_joints = Some(*best_solution);
@@ -200,15 +200,17 @@ impl Robot {
         Ok(result_array.into_pyarray(py).into())
     }
 
-    /// Batch forward kinematics using NumPy arrays.
+    /// Batch forward kinematics with RigidTransform input
     /// Input: joints array of shape (n, 6) with columns [J1, J2, J3, J4, J5, J6]
     /// Output: poses array of shape (n, 6) with columns [X, Y, Z, A, B, C]
     /// Returns NaN for rows with NaN input values.
-    #[pyo3(signature = (joints,))]
+    /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
+    #[pyo3(signature = (joints, ee_transform=None))]
     fn batch_forward<'py>(
         &self,
         py: Python<'py>,
         joints: PyReadonlyArray2<'py, f64>,
+        ee_transform: Option<[[f64; 4]; 4]>,
     ) -> PyResult<Py<PyArray2<f64>>> {
         let joints_array = joints.as_array();
         let n = joints_array.nrows();
@@ -225,7 +227,7 @@ impl Robot {
             }
 
             let joints_input = [row[0], row[1], row[2], row[3], row[4], row[5]];
-            let (translation, rotation) = self.forward(joints_input);
+            let (translation, rotation) = self.forward(joints_input, ee_transform);
 
             results.push(translation[0]);
             results.push(translation[1]);
@@ -245,9 +247,28 @@ impl Robot {
     /// Compute 4x4 transform matrices for all robot links
     /// Returns: Vec<[[f64; 4]; 4]> where each element is a 4x4 matrix (row-major)
     /// Order: [l0, l1, l2, l3, l4, l5, l6, tcp]
-    #[pyo3(signature = (joints))]
-    fn forward_frames(&self, joints: [f64; 6]) -> Vec<[[f64; 4]; 4]> {
+    /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
+    #[pyo3(signature = (joints, ee_transform=None))]
+    fn forward_frames(
+        &self, 
+        joints: [f64; 6],
+        ee_transform: Option<[[f64; 4]; 4]>
+    ) -> Vec<[[f64; 4]; 4]> {
         use std::f64::consts::PI;
+
+        let (ee_rotation_matrix, ee_translation_vec) = if let Some(ee_matrix) = ee_transform {
+            let matrix = nalgebra::Matrix4::from_row_slice(&[
+                ee_matrix[0][0], ee_matrix[0][1], ee_matrix[0][2], ee_matrix[0][3],
+                ee_matrix[1][0], ee_matrix[1][1], ee_matrix[1][2], ee_matrix[1][3], 
+                ee_matrix[2][0], ee_matrix[2][1], ee_matrix[2][2], ee_matrix[2][3],
+                ee_matrix[3][0], ee_matrix[3][1], ee_matrix[3][2], ee_matrix[3][3]
+            ]);
+            let rot = Rotation3::from_matrix_unchecked(matrix.fixed_view::<3, 3>(0, 0).into());
+            let trans: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            (rot, trans)
+        } else {
+            (Rotation3::identity(), Vector3::zeros())
+        };
 
         // Create a mutable copy for processing
         let mut j = joints;
@@ -313,8 +334,8 @@ impl Robot {
         out.push(to_matrix_4x4(&t));
 
         // TCP: Apply end effector transformation
-        let combined_rotation = t.rotation.to_rotation_matrix() * self._ee_rotation_matrix;
-        let final_translation = t.translation.vector + combined_rotation * self.ee_translation;
+        let combined_rotation = t.rotation.to_rotation_matrix() * ee_rotation_matrix;
+        let final_translation = t.translation.vector + combined_rotation * &ee_translation_vec;
         let tcp_transform = nalgebra::Isometry3::from_parts(
             nalgebra::Translation3::from(final_translation),
             nalgebra::UnitQuaternion::from_rotation_matrix(&combined_rotation)
