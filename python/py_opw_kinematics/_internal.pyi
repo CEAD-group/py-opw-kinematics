@@ -155,9 +155,9 @@ class Robot:
         ...
 
     def forward(
-        self, 
+        self,
         joints: Tuple[float, float, float, float, float, float],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
     ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         """
         Computes the forward kinematics for the given joint angles.
@@ -205,9 +205,9 @@ class Robot:
         ...
 
     def batch_forward(
-        self, 
+        self,
         joints: npt.NDArray[np.float64],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
     ) -> npt.NDArray[np.float64]:
         """
         Computes the forward kinematics for multiple sets of joint angles in batch mode.
@@ -219,9 +219,9 @@ class Robot:
         ...
 
     def forward_frames(
-        self, 
+        self,
         joints: Tuple[float, float, float, float, float, float],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
     ) -> List[npt.NDArray[np.float64]]:
         """
         Computes the forward kinematics for all joint frames.

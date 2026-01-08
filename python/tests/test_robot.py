@@ -60,14 +60,14 @@ def test_robot_forward_kinematics(
     )
 
     # Calculate forward kinematics
-    t, r = robot.forward(joints=joints, ee_transform=ee_transform)
+    t, r = robot.forward_legacy(joints=joints, ee_transform=ee_transform)
 
     # Assert the translation vector is close to the expected position
     assert np.allclose(t, expected_position, atol=1e-3)
-    print("R", r)
+
     if expected_orientation:
-        # Assert the rotation vector is close to the expected orientation
-        assert r == pytest.approx(expected_orientation, abs=1e-3)
+        # Assert the orientation is close to the expected orientation
+        assert np.allclose(r, expected_orientation, atol=1e-3)
 
 
 @pytest.mark.parametrize(
@@ -94,13 +94,14 @@ def test_robot_forward_kinematics_with_ee_translation(
         rotation=example_ee_rotation, translation=ee_translation
     )
     # Calculate forward kinematics
-    t, r = robot.forward(joints=joints, ee_transform=ee_transform)
+    t, r = robot.forward_legacy(joints=joints, ee_transform=ee_transform)
     # Assert the translation vector is close to the expected position
     assert np.allclose(t, expected_position, atol=1e-3)
-    print("R", r)
+
     if expected_orientation:
-        # Assert the rotation vector is close to the expected orientation
-        assert np.allclose(r, expected_orientation, atol=1e-3)
+        # Convert rotation to euler angles and assert
+        euler_angles = r
+        assert np.allclose(euler_angles, expected_orientation, atol=1e-3)
 
 
 def test_robot_inverse_with_ee_translation(
@@ -114,11 +115,20 @@ def test_robot_inverse_with_ee_translation(
         rotation=example_ee_rotation, translation=ee_translation
     )
 
+    # Create target pose using the robot's Euler convention properly
+    # The expected values are in the robot's Euler convention format
+    expected_euler = (-37.346, 25.987, -4.814)
+    expected_position = [2396.467, -743.091, 1572.479]
+
+    # Convert robot's Euler angles to rotation matrix using robot's convention
+    rotation_matrix = robot._euler_convention.euler_to_matrix(expected_euler)
+    target_rotation = Rotation.from_matrix(rotation_matrix)
+    target_pose = RigidTransform.from_components(
+        rotation=target_rotation, translation=expected_position
+    )
+
     joint_solutions = robot.inverse(
-        (
-            (2396.467, -743.091, 1572.479),
-            (-37.346, 25.987, -4.814),
-        ),
+        target_pose,
         ee_transform=ee_transform,
     )
 
@@ -182,10 +192,10 @@ def test_robot_kinematics_roundtrip(
     )
 
     # Perform forward kinematics to get the pose
-    position, orientation = robot.forward(joints=joints, ee_transform=ee_transform)
+    forward_result = robot.forward(joints=joints, ee_transform=ee_transform)
 
     # Calculate inverse kinematics to retrieve joint angles from the given pose
-    joint_solutions = robot.inverse((position, orientation), ee_transform=ee_transform)
+    joint_solutions = robot.inverse(forward_result, ee_transform=ee_transform)
 
     # Ensure at least one valid solution matches the original joint angles
     assert any(
@@ -194,15 +204,19 @@ def test_robot_kinematics_roundtrip(
 
     # Ensure all forward kinematics from the computed joint angles match the original pose
     for joint_solution in joint_solutions:
-        position_solution, orientation_solution = robot.forward(
+        solution_result = robot.forward(
             joints=joint_solution, ee_transform=ee_transform
         )
         assert np.allclose(
-            position, position_solution, atol=1e-3
-        ), f"Position mismatch: {position} != {position_solution}"
+            forward_result.translation, solution_result.translation, atol=1e-3
+        ), f"Position mismatch: {forward_result.translation} != {solution_result.translation}"
+
+        # Compare rotations using rotation matrices to avoid gimbal lock issues
+        orig_rot_matrix = forward_result.rotation.as_matrix()
+        sol_rot_matrix = solution_result.rotation.as_matrix()
         assert np.allclose(
-            orientation, orientation_solution, atol=1e-3
-        ), f"Orientation mismatch: {orientation} != {orientation_solution}"
+            orig_rot_matrix, sol_rot_matrix, atol=1e-3
+        ), f"Orientation mismatch in rotation matrices"
 
 
 @pytest.mark.parametrize(
@@ -223,23 +237,17 @@ def test_ee_translation(
     ee_transform = RigidTransform.from_components(
         rotation=ee_rotation_scipy, translation=ee_translation
     )
-    initial_translation_result, _ = robot.forward(
-        joints=joint_angles, ee_transform=ee_transform
-    )
+    initial_result = robot.forward(joints=joint_angles, ee_transform=ee_transform)
 
     ee_translation = initial_translation
     ee_rotation_scipy = Rotation.from_euler("xyz", ee_rotation, degrees=True)
     ee_transform = RigidTransform.from_components(
         rotation=ee_rotation_scipy, translation=ee_translation
     )
-    updated_translation_result, _ = robot.forward(
-        joints=joint_angles, ee_transform=ee_transform
-    )
+    updated_result = robot.forward(joints=joint_angles, ee_transform=ee_transform)
 
     # Calculate translation differences
-    translation_diff = np.array(updated_translation_result) - np.array(
-        initial_translation_result
-    )
+    translation_diff = updated_result.translation - initial_result.translation
 
     # Assert translation differences
     assert np.allclose(
@@ -265,10 +273,10 @@ def test_batch_forward_random(example_robot: Robot, example_ee_rotation: Rotatio
     joints_df = pl.DataFrame(joint_data)
 
     # Use batch_forward to compute positions and orientations
-    result_df = robot.batch_forward(joints_df, ee_transform=ee_transform)
+    result_poses = robot.batch_forward(joints_df, ee_transform=ee_transform)
 
-    # Verify that the output DataFrame has the expected length
-    assert len(result_df) == num_samples, "Mismatch in number of samples"
+    # Verify that the output list has the expected length
+    assert len(result_poses) == num_samples, "Mismatch in number of samples"
 
 
 def test_batch_inverse_random(example_robot: Robot, example_ee_rotation: Rotation):
@@ -278,18 +286,16 @@ def test_batch_inverse_random(example_robot: Robot, example_ee_rotation: Rotatio
     # Generate random positions and orientations
     num_samples = 50
     np.random.seed(42)
-    pose_data = {
-        "X": np.random.uniform(1500, 2500, num_samples),
-        "Y": np.random.uniform(-1000, 1000, num_samples),
-        "Z": np.random.uniform(1000, 2500, num_samples),
-        "A": np.random.uniform(-180, 180, num_samples),
-        "B": np.random.uniform(-90, 90, num_samples),
-        "C": np.random.uniform(-180, 180, num_samples),
-    }
-    poses_df = pl.DataFrame(pose_data)
+    poses = []
+    for _ in range(num_samples):
+        position = np.random.uniform([1500, -1000, 1000], [2500, 1000, 2500])
+        euler_angles = np.random.uniform([-180, -90, -180], [180, 90, 180])
+        rotation = Rotation.from_euler("xyz", euler_angles, degrees=True)
+        pose = RigidTransform.from_components(rotation=rotation, translation=position)
+        poses.append(pose)
 
     # Use batch_inverse to compute joint angles
-    result_df = robot.batch_inverse(poses_df, ee_transform=ee_transform)
+    result_df = robot.batch_inverse(poses, ee_transform=ee_transform)
 
     # Verify that the output DataFrame has the expected length
     assert len(result_df) <= num_samples, "Mismatch in number of samples"
@@ -317,9 +323,9 @@ def test_batch_roundtrip(example_robot: Robot):
     }
     joints_df = pl.DataFrame(joint_data)
 
-    poses_df = robot.batch_forward(joints_df, ee_transform=ee_transform)
+    poses_list = robot.batch_forward(joints_df, ee_transform=ee_transform)
     result_joints_df = robot.batch_inverse(
-        poses_df, current_joints=joints_df[0].to_numpy()[0], ee_transform=ee_transform
+        poses_list, current_joints=joints_df[0].to_numpy()[0], ee_transform=ee_transform
     )
 
     assert np.isclose(

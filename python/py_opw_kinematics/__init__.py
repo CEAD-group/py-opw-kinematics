@@ -1,8 +1,8 @@
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import polars as pl
-from scipy.spatial.transform import RigidTransform
+from scipy.spatial.transform import RigidTransform, Rotation
 
 from ._internal import EulerConvention, KinematicModel
 from ._internal import Robot as _RobotInternal
@@ -20,26 +20,45 @@ class Robot:
         euler_convention: EulerConvention,
     ) -> None:
         self._robot = _RobotInternal(kinematic_model, euler_convention)
+        self._euler_convention = euler_convention
 
     def __repr__(self) -> str:
         return self._robot.__repr__()
 
-    def forward(
+    def rigid_transform_to_pose(
+        self, rigid_transform: RigidTransform
+    ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        """
+        Converts a RigidTransform object to the legacy pose format.
+
+        :param rigid_transform: RigidTransform object to convert
+        :return: Tuple of (translation, orientation) where both are 3-element tuples
+        """
+        # Extract translation
+        translation = tuple(rigid_transform.translation)
+
+        # Extract rotation and convert to Euler angles using robot's convention
+        rotation_matrix = rigid_transform.rotation.as_matrix()
+        orientation = self._euler_convention.matrix_to_euler(rotation_matrix.tolist())
+
+        return (translation, tuple(orientation))
+
+    def forward_legacy(
         self,
         joints: Tuple[float, float, float, float, float, float],
         ee_transform: Optional[RigidTransform] = None,
     ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         """
-        Computes the forward kinematics for the given joint angles.
+        Legacy forward kinematics method that returns pose as tuples.
 
         :param joints: Joint angles of the robot.
         :param ee_transform: End effector transformation as RigidTransform (optional).
-        :return: A tuple containing the position and orientation of the end-effector.
+        :return: Tuple of (translation, orientation) where both are 3-element tuples
         """
-        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
-        return self._robot.forward(joints, ee_matrix)
+        rigid_transform = self.forward(joints, ee_transform)
+        return self.rigid_transform_to_pose(rigid_transform)
 
-    def inverse(
+    def inverse_legacy(
         self,
         pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
         current_joints: Optional[
@@ -48,19 +67,70 @@ class Robot:
         ee_transform: Optional[RigidTransform] = None,
     ) -> list[Tuple[float, float, float, float, float, float]]:
         """
-        Computes the inverse kinematics for a given pose.
+        Legacy inverse kinematics method that accepts pose as tuples.
 
-        :param pose: Desired pose (position and orientation) of the end-effector.
+        :param pose: Desired pose as (translation, orientation) tuples.
         :param current_joints: Current joint configuration (optional).
         :param ee_transform: End effector transformation as RigidTransform (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
+        # Convert legacy pose format to RigidTransform
+        translation, orientation = pose
+
+        # Convert orientation (Euler angles) to rotation matrix
+        rotation_matrix = self._euler_convention.euler_to_matrix(orientation)
+        rotation = Rotation.from_matrix(rotation_matrix)
+
+        # Create RigidTransform
+        rigid_transform = RigidTransform.from_components(
+            rotation=rotation, translation=np.array(translation)
+        )
+
+        return self.inverse(rigid_transform, current_joints, ee_transform)
+
+    def forward(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        ee_transform: Optional[RigidTransform] = None,
+    ) -> RigidTransform:
+        """
+        Computes the forward kinematics for the given joint angles.
+
+        :param joints: Joint angles of the robot.
+        :param ee_transform: End effector transformation as RigidTransform (optional).
+        :return: RigidTransform representing the end-effector pose.
+        """
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
-        return self._robot.inverse(pose, current_joints, ee_matrix)
+        matrix_4x4 = self._robot.forward(joints, ee_matrix)
+
+        # Convert 4x4 matrix to RigidTransform
+        return RigidTransform.from_matrix(matrix_4x4)
+
+    def inverse(
+        self,
+        pose: RigidTransform,
+        current_joints: Optional[
+            Tuple[float, float, float, float, float, float]
+        ] = None,
+        ee_transform: Optional[RigidTransform] = None,
+    ) -> list[Tuple[float, float, float, float, float, float]]:
+        """
+        Computes the inverse kinematics for a given pose.
+
+        :param pose: Desired pose as RigidTransform.
+        :param current_joints: Current joint configuration (optional).
+        :param ee_transform: End effector transformation as RigidTransform (optional).
+        :return: A list of possible joint configurations that achieve the desired pose.
+        """
+        # Convert RigidTransform to 4x4 matrix
+        matrix_4x4 = pose.as_matrix()
+
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        return self._robot.inverse(matrix_4x4, current_joints, ee_matrix)
 
     def batch_inverse(
         self,
-        poses: pl.DataFrame,
+        poses: List[RigidTransform],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
@@ -69,22 +139,26 @@ class Robot:
         """
         Computes the inverse kinematics for multiple poses in batch mode.
 
-        :param poses: DataFrame containing desired poses with columns X, Y, Z, A, B, C.
+        :param poses: List of RigidTransform objects representing desired poses.
         :param current_joints: Current joint configuration (optional).
         :param ee_transform: End effector transformation as RigidTransform (optional).
         :return: DataFrame containing the computed joint configurations with columns J1-J6.
         """
-        # Convert Polars DataFrame to NumPy array
-        poses_array = poses.select(["X", "Y", "Z", "A", "B", "C"]).to_numpy()
+        # Convert RigidTransforms to 4x4 matrices
+        n_poses = len(poses)
+        matrix_array = np.zeros((n_poses, 16), dtype=np.float64)
 
-        # Ensure float64 dtype and C-contiguous layout
-        poses_array = np.ascontiguousarray(poses_array, dtype=np.float64)
+        for i, pose in enumerate(poses):
+            matrix_4x4 = pose.as_matrix()
+            matrix_array[i] = matrix_4x4.flatten()
 
         # Convert RigidTransform to matrix for Rust interface
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
 
-        # Call Rust with NumPy array
-        result_array = self._robot.batch_inverse(poses_array, current_joints, ee_matrix)
+        # Call Rust with matrix array
+        result_array = self._robot.batch_inverse(
+            matrix_array, current_joints, ee_matrix
+        )
 
         # Convert back to Polars DataFrame
         return pl.DataFrame(
@@ -102,13 +176,13 @@ class Robot:
         self,
         joints: pl.DataFrame,
         ee_transform: Optional[RigidTransform] = None,
-    ) -> pl.DataFrame:
+    ) -> List[RigidTransform]:
         """
-        Computes the forward kinematics for multiple sets of joint angles in batch mode.
+        Computes the forward kinematics for multiple joint configurations in batch mode.
 
         :param joints: DataFrame containing joint configurations with columns J1-J6.
         :param ee_transform: End effector transformation as RigidTransform (optional).
-        :return: DataFrame containing the computed poses with columns X, Y, Z, A, B, C.
+        :return: List of RigidTransform objects representing the computed poses.
         """
         # Convert Polars DataFrame to NumPy array
         joints_array = joints.select(["J1", "J2", "J3", "J4", "J5", "J6"]).to_numpy()
@@ -122,17 +196,15 @@ class Robot:
         # Call Rust with NumPy array
         result_array = self._robot.batch_forward(joints_array, ee_matrix)
 
-        # Convert back to Polars DataFrame
-        return pl.DataFrame(
-            {
-                "X": result_array[:, 0],
-                "Y": result_array[:, 1],
-                "Z": result_array[:, 2],
-                "A": result_array[:, 3],
-                "B": result_array[:, 4],
-                "C": result_array[:, 5],
-            }
-        )
+        # Convert 4x4 matrices back to RigidTransform objects
+        poses = []
+        for i in range(result_array.shape[0]):
+            # Reshape flattened matrix back to 4x4
+            matrix_4x4 = result_array[i].reshape(4, 4)
+            rigid_transform = RigidTransform.from_matrix(matrix_4x4)
+            poses.append(rigid_transform)
+
+        return poses
 
     def forward_frames(
         self,
