@@ -170,7 +170,7 @@ class Robot:
 
     def inverse(
         self,
-        pose: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+        pose: npt.NDArray[np.float64],
         current_joints: Optional[
             Tuple[float, float, float, float, float, float]
         ] = None,
@@ -179,7 +179,7 @@ class Robot:
         """
         Computes the inverse kinematics for a given pose.
 
-        :param pose: Desired pose (position and orientation) of the end-effector.
+        :param pose: Desired pose as 4x4 transformation matrix.
         :param current_joints: Current joint configuration (optional).
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
