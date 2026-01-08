@@ -111,10 +111,17 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
         for joints, xyz, abc in observations:
             # Create EE transform from the tested parameters
             from scipy.spatial.transform import RigidTransform, Rotation
-            ee_rotation = Rotation.from_euler('XYZ', [ee_A, ee_B, ee_C], degrees=degrees)
-            ee_transform = RigidTransform.from_components(rotation=ee_rotation, translation=[0, 0, 0])
-            
-            t, r = robot.forward(joints=joints, ee_transform=ee_transform)
+
+            ee_rotation = Rotation.from_euler(
+                "XYZ", [ee_A, ee_B, ee_C], degrees=degrees
+            )
+            ee_transform = RigidTransform.from_components(
+                rotation=ee_rotation, translation=[0, 0, 0]
+            )
+
+            # Note: Using forward_legacy to get tuple output (translation, rotation)
+            # The new forward() method returns RigidTransform objects
+            t, r = robot.forward_legacy(joints=joints, ee_transform=ee_transform)
 
             # Assert that computed and expected values are approximately equal
             if not (np.allclose(t, xyz, atol=1e-2) and np.allclose(r, abc, atol=1e-2)):
