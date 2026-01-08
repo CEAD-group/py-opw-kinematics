@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 import numpy as np
 import polars as pl
@@ -34,14 +34,15 @@ class Robot:
         :param rigid_transform: RigidTransform object to convert
         :return: Tuple of (translation, orientation) where both are 3-element tuples
         """
-        # Extract translation
-        translation = tuple(rigid_transform.translation)
-
-        # Extract rotation and convert to Euler angles using robot's convention
+        # Translation is naturally a 3D vector - convert to tuple
+        translation = cast(Tuple[float, float, float], tuple(map(float, rigid_transform.translation)))
+        
+        # Extract rotation and convert to Euler angles using robot's convention  
         rotation_matrix = rigid_transform.rotation.as_matrix()
-        orientation = self._euler_convention.matrix_to_euler(rotation_matrix.tolist())
+        matrix_list = [[float(cell) for cell in row] for row in rotation_matrix]
+        orientation = self._euler_convention.matrix_to_euler(matrix_list)
 
-        return (translation, tuple(orientation))
+        return (translation, orientation)
 
     def forward_legacy(
         self,
@@ -122,7 +123,7 @@ class Robot:
         :param ee_transform: End effector transformation as RigidTransform (optional).
         :return: A list of possible joint configurations that achieve the desired pose.
         """
-        # Convert RigidTransform to 4x4 matrix
+        # Convert RigidTransform to 4x4 matrix as expected by the Rust backend
         matrix_4x4 = pose.as_matrix()
 
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
