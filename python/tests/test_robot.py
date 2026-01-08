@@ -216,7 +216,7 @@ def test_robot_kinematics_roundtrip(
         sol_rot_matrix = solution_result.rotation.as_matrix()
         assert np.allclose(
             orig_rot_matrix, sol_rot_matrix, atol=1e-3
-        ), f"Orientation mismatch in rotation matrices"
+        ), "Orientation mismatch in rotation matrices"
 
 
 @pytest.mark.parametrize(
