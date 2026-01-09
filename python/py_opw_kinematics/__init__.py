@@ -8,6 +8,7 @@ This library focuses on pure kinematics with 4x4 transformation matrices.
 from typing import List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from ._internal import KinematicModel
 from ._internal import Robot as _RobotInternal
@@ -166,9 +167,9 @@ class Robot:
 
 
 def interpolate_poses(
-    x: np.ndarray,
+    x: ArrayLike,
     poses: "RigidTransform",
-    xn: np.ndarray,
+    xn: ArrayLike,
 ) -> "RigidTransform":
     """
     Interpolate poses at new points using SLERP for rotation and linear for translation.

@@ -62,7 +62,7 @@ def find_correct_configuration(observations, model: KinematicModel, degrees: boo
     )
     print(f"Testing {total_combinations} configurations")
 
-    working_configurations = []
+    working_configurations: list[tuple[Robot, tuple[float, float, float]]] = []
 
     for i, params in enumerate(parameter_combinations):
         if (i + 1) % 10000 == 0:
