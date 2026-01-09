@@ -33,6 +33,7 @@ dev = [
 test = [
     "pytest",
     "mypy",
+    "scipy-stubs",
     "polars>=1.22.0",
 ]
 
