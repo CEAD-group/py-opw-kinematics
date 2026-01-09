@@ -9,6 +9,23 @@
 - **Full Rust Integration**: Uses Rust for the core kinematic calculations, offering speed and robustness while allowing access through Python.
 - **Singularity Handling**: Manages kinematic singularities such as J5 = 0° or ±180°.
 
+## Scope
+
+### Goals
+
+- Inverse kinematics (single and batch)
+- Batch IK considers previous state to find closest solution
+- Forward kinematics outputs all link frames, not just end effector
+- Optional tool offset parameter for TCP calculations
+- Stateless API - pure kinematics library
+
+### Non-Goals
+
+- External axes handling (handled by higher-level coordination layer)
+- Collision detection (separate concern, e.g. [py-parry3d](https://github.com/CEAD-group/py-parry3d))
+- Parallelogram linkage mechanics (handled by higher-level coordination layer)
+- Euler angle / rotation conversions (use `scipy.spatial.transform.Rotation`)
+
 ## Installation
 
 Install using pip:
@@ -81,6 +98,13 @@ Solution: [ 10.    90.76 -20.4   -0.    69.6    0.  ]
 Solution: [  10.    0.  -90. -180.    0.  180.]
 Solution: [  10.     90.76  -20.4  -180.    -69.6   180.  ]
 ```
+
+## Related Projects
+
+This library is part of an ecosystem for robotics simulation and visualization:
+
+- **[py-parry3d](https://github.com/CEAD-group/py-parry3d)** ([PyPI](https://pypi.org/project/py-parry3d/)) - Collision detection using parry3d (Rust + PyO3). Use link frames from `py-opw-kinematics` to check for collisions.
+- **[threejs-viewer](https://github.com/CEAD-group/threejs-viewer)** ([PyPI](https://pypi.org/project/threejs-viewer/)) - Web-based 3D viewer with WebSocket interface for visualizing robot poses and meshes.
 
 ## Acknowledgements
 
