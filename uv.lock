@@ -1365,6 +1365,7 @@ test = [
     { name = "mypy" },
     { name = "polars" },
     { name = "pytest" },
+    { name = "scipy-stubs" },
 ]
 
 [package.metadata]
@@ -1379,6 +1380,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'test'" },
     { name = "scipy", specifier = ">=1.16.0" },
     { name = "scipy-stubs", marker = "extra == 'dev'" },
+    { name = "scipy-stubs", marker = "extra == 'test'" },
 ]
 provides-extras = ["dev", "pandas", "polars", "test"]
 

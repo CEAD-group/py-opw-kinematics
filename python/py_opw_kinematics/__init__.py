@@ -117,7 +117,10 @@ class Robot:
         :return: List of RigidTransform objects.
         """
         if hasattr(joints, "to_numpy"):
-            arr = joints.select(_JOINT_COLS).to_numpy() if hasattr(joints, "select") else joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr]
+            if hasattr(joints, "select"):
+                arr = joints.select(_JOINT_COLS).to_numpy()
+            else:
+                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr]
         else:
             arr = np.asarray(joints)
         joints_array = np.ascontiguousarray(arr, dtype=np.float64)
@@ -148,8 +151,13 @@ class Robot:
             if hasattr(cj, "to_numpy"):
                 # convenience methods for DataFrame-like inputs (Pandas, Polars)
                 is_polars = hasattr(cj, "select")
-                arr = cj.select(_JOINT_COLS).to_numpy() if is_polars else cj[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
-                output_type, output_kwargs = type(current_joints), {"schema" if is_polars else "columns": _JOINT_COLS}
+                if is_polars:
+                    arr = cj.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined]
+                    output_kwargs = {"schema": _JOINT_COLS}
+                else:
+                    arr = cj[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
+                    output_kwargs = {"columns": _JOINT_COLS}
+                output_type = type(current_joints)
             else:
                 arr = np.asarray(cj)
                 output_type, output_kwargs = None, {}

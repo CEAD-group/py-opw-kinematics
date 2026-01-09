@@ -7,6 +7,8 @@ from py_opw_kinematics import KinematicModel, Robot, interpolate_poses
 from scipy.spatial.transform import RigidTransform, Rotation
 import numpy as np
 
+np.set_printoptions(precision=2, suppress=True)
+
 # %%
 kinematic_model = KinematicModel(
     a1=400.333,
