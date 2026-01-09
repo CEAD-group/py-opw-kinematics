@@ -34,6 +34,7 @@ test = [
     "pytest",
     "mypy",
     "scipy-stubs",
+    "pandas-stubs",
     "polars>=1.22.0",
     "pandas>=2.0.0",
 ]
