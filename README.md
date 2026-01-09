@@ -111,31 +111,39 @@ Found 4 IK solutions
   [  10.     90.76  -20.4  -180.    -69.6   180.  ]
 ```
 
-### SLERP Trajectory Interpolation
+### Trajectory Interpolation with SLERP
 
 ```python
 from py_opw_kinematics import interpolate_poses
 from scipy.spatial.transform import RigidTransform, Rotation
 import numpy as np
 
-# Define keyframe poses using scipy RigidTransform
-pose_start = RigidTransform.from_components(
-    rotation=Rotation.from_euler("XYZ", [0, 0, -10], degrees=True),
-    translation=[2000, -200, 2000],
-)
-pose_end = RigidTransform.from_components(
-    rotation=Rotation.from_euler("XYZ", [-30, 20, 10], degrees=True),
-    translation=[2200, 200, 1800],
+# Define keyframes as XYZABC (G-code style)
+xyzabc = np.array([
+    [1800, -500, 1000,  0,  0,  0],
+    [2100,  500, 2000, 10, 10, 10],
+])
+
+# Convert to RigidTransform
+keyframes = RigidTransform.from_components(
+    translation=xyzabc[:, :3],
+    rotation=Rotation.from_euler("xyz", xyzabc[:, 3:], degrees=True),
 )
 
-# Interpolate using SLERP for rotation, linear for translation
-# API follows scipy.interpolate.interp1d(x, y) pattern
-keyframes = RigidTransform.concatenate([pose_start, pose_end])
-trajectory = interpolate_poses([0, 1], keyframes, np.linspace(0, 1, 11))
+# Interpolate: SLERP for rotation, linear for translation
+trajectory = interpolate_poses([0, 1], keyframes, np.linspace(0, 1, 1000))
 
-# Compute IK for entire trajectory
-joints = robot.batch_inverse(trajectory)
-print(joints)
+# Batch IK for entire trajectory (current_joints helps find closest solution)
+joints = robot.batch_inverse(
+    poses=trajectory,
+    current_joints=(0, 0, -90, 0, 0, 0),
+    ee_transform=ee_transform,
+)
+print(f"Shape: {joints.shape}")  # (1000, 6)
+
+# Batch FK to verify
+poses_back = robot.batch_forward(joints, ee_transform=ee_transform)
+print(f"Poses: {len(poses_back)}")  # 1000
 ```
 
 ## Related Projects
