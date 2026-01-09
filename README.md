@@ -4,10 +4,10 @@
 
 ## Key Features
 
-- **Ease of Use**: Fully customizable end-effector rotation using Euler angles. Configurable to use degrees or radians.
-- **High Performance**: Capable of batch operations using Polars DataFrames for maximum efficiency. For example, 100,000 inverse kinematic solutions can be computed in just 0.4 seconds.
+- **scipy Integration**: Uses `scipy.spatial.transform.RigidTransform` for poses, giving you access to all rotation representations (Euler, quaternions, rotation vectors) and SLERP interpolation.
+- **High Performance**: Capable of batch operations for maximum efficiency. For example, 100,000 inverse kinematic solutions can be computed in just 0.4 seconds.
 - **Full Rust Integration**: Uses Rust for the core kinematic calculations, offering speed and robustness while allowing access through Python.
-- **Singularity Handling**: Manages kinematic singularities such as J5 = 0° or ±180°.
+- **Singularity Handling**: Manages kinematic singularities such as J5 = 0 or 180.
 
 ## Scope
 
@@ -34,6 +34,12 @@ Install using pip:
 pip install py-opw-kinematics
 ```
 
+Requires scipy >= 1.16 for `RigidTransform` support.
+
+For optional DataFrame support in batch operations:
+```sh
+pip install py-opw-kinematics[polars]  # or [pandas]
+```
 
 Note: Rust is required to compile the underlying Rust library if not using pre-built binaries.
 
@@ -45,25 +51,21 @@ This library uses seven kinematic parameters (_a1, a2, b, c1, c2, c3_, and _c4_)
 rotations are positive about the base axis of the robot. No other setup is required.
 
 ![OPW Diagram](https://bourumir-wyngs.github.io/rs-opw-kinematics/documentation/opw.gif)
-<!-- ![OPW Diagram](documentation/opw.gif) -->
 
 To use the library, create a `KinematicModel` instance with the appropriate values for the 7
 kinematic parameters and any joint offsets required to bring the paper's zero position (arm up in Z) to the
 manufacturer's position. The direction of each of the axes can be flipped with the `flip_axes` parameter if your robot's axes do not match the convention in the paper.
 
-Additionally, you can specify the Euler convention to use for the end-effector rotation. The `EulerConvention` class allows you to specify the order of the rotations and whether they are extrinsic or intrinsic. The `degrees` parameter can be set to `True` to use degrees instead of radians.
+If the robot has a parallelogram between joints 2 and 3, set `has_parallelogram` to `True` to link these axes.
 
-If the robot has a parallelogram between joints 2 and 3, set `has_parallelogram` to `True` to link these axes. 
+### Basic Example
 
-Below is a basic example demonstrating how to define a robot, configure Euler conventions, and compute forward kinematics.
-
-Single Operation Example
-    
 ```python
-
-from py_opw_kinematics import KinematicModel, Robot, EulerConvention
+from py_opw_kinematics import KinematicModel, Robot
+from scipy.spatial.transform import RigidTransform, Rotation
 import numpy as np
 
+# Define robot geometry
 kinematic_model = KinematicModel(
     a1=400,
     a2=-250,
@@ -72,31 +74,68 @@ kinematic_model = KinematicModel(
     c2=1175,
     c3=1444,
     c4=230,
-    offsets=(0,0,0,0,0,0),
+    offsets=(0, 0, 0, 0, 0, 0),
     flip_axes=(True, False, True, True, False, True),
     has_parallelogram=True,
 )
-euler_convention = EulerConvention("XYZ", extrinsic=False, degrees=True)
-robot = Robot(kinematic_model, euler_convention, ee_rotation=(0, -90, 0))
 
-# Compute forward kinematics for a given set of joint angles
-angles = (10, 0, -90, 0, 0, 0)
-position, rotation = robot.forward(angles)
-print(f"Position: {np.round(position,2)}, Rotation: {np.round(rotation,2)}")
+# Create robot (degrees=True means joint angles are in degrees)
+robot = Robot(kinematic_model, degrees=True)
 
-# Compute inverse kinematics for a given position and rotation
-for solution in robot.inverse((position, rotation)):
-    print(f"Solution: {np.round(solution, 2)}")
+# Define end effector transform
+ee_rotation = Rotation.from_euler("xyz", [0, -90, 0], degrees=True)
+ee_transform = RigidTransform.from_components(rotation=ee_rotation, translation=[0, 0, 0])
 
+# Forward kinematics
+joints = (10, 0, -90, 0, 0, 0)
+pose = robot.forward(joints, ee_transform=ee_transform)
+
+print(f"Position: {np.round(pose.translation, 2)}")
+print(f"Rotation (XYZ Euler): {np.round(pose.rotation.as_euler('XYZ', degrees=True), 2)}")
+
+# Inverse kinematics
+solutions = robot.inverse(pose, ee_transform=ee_transform)
+print(f"Found {len(solutions)} IK solutions")
+for sol in solutions:
+    print(f"  {np.round(sol, 2)}")
 ```
-This example prints:
-    
+
+Output:
 ```
-Position: [2042.49 -360.15 2255.  ], Rotation: [  0.   0. -10.]
-Solution: [ 10.   0. -90.  -0.   0.   0.]
-Solution: [ 10.    90.76 -20.4   -0.    69.6    0.  ]
-Solution: [  10.    0.  -90. -180.    0.  180.]
-Solution: [  10.     90.76  -20.4  -180.    -69.6   180.  ]
+Position: [2042.42 -360.13 2259.  ]
+Rotation (XYZ Euler): [  0.   0. -10.]
+Found 4 IK solutions
+  [ 10.   0. -90.   0.   0.   0.]
+  [ 10.    90.76 -20.4    0.   69.6    0.  ]
+  [  10.    0.  -90. -180.    0.  180.]
+  [  10.     90.76  -20.4  -180.    -69.6   180.  ]
+```
+
+### SLERP Trajectory Interpolation
+
+```python
+from py_opw_kinematics import interpolate_poses
+from scipy.spatial.transform import RigidTransform, Rotation
+import numpy as np
+
+# Define keyframe poses using scipy RigidTransform
+pose_start = RigidTransform.from_components(
+    rotation=Rotation.from_euler("XYZ", [0, 0, -10], degrees=True),
+    translation=[2000, -200, 2000],
+)
+pose_end = RigidTransform.from_components(
+    rotation=Rotation.from_euler("XYZ", [-30, 20, 10], degrees=True),
+    translation=[2200, 200, 1800],
+)
+
+# Interpolate using SLERP for rotation, linear for translation
+# API follows scipy.interpolate.interp1d(x, y) pattern
+keyframes = RigidTransform.concatenate([pose_start, pose_end])
+trajectory = interpolate_poses([0, 1], keyframes, np.linspace(0, 1, 11))
+
+# Compute IK for entire trajectory
+joints = robot.batch_inverse(trajectory)
+print(joints)
 ```
 
 ## Related Projects
@@ -110,7 +149,7 @@ This library is part of an ecosystem for robotics simulation and visualization:
 
 This project builds on the Rust library rs-opw-kinematics by Bourumir Wyngs, which itself draws inspiration from:
 
-- The 2014 research paper: An Analytical Solution of the Inverse Kinematics Problem of Industrial Serial Manipulators with an Ortho-parallel Basis and a Spherical Wrist, authored by Mathias Brandstötter, Arthur Angerer, and Michael Hofbaur (ResearchGate link).
+- The 2014 research paper: An Analytical Solution of the Inverse Kinematics Problem of Industrial Serial Manipulators with an Ortho-parallel Basis and a Spherical Wrist, authored by Mathias Brandstotter, Arthur Angerer, and Michael Hofbaur (ResearchGate link).
 - The C++ project opw_kinematics, which provided valuable insights for validation and testing.
 
 

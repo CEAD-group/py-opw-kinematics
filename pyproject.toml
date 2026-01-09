@@ -14,21 +14,26 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "maturin>=1.7.4",
-    "polars[pyarrow,numpy]>=1.22.0,!=1.32.*",
     "numpy>=1.26.4",
-    "scipy>=1.8.0",
-    "scipy-stubs",
-    "jupyter>=1.1.1",
+    "scipy>=1.16.0",
 ]
 
 [project.optional-dependencies]
+polars = [
+    "polars>=1.22.0",
+]
+pandas = [
+    "pandas>=2.0.0",
+]
 dev = [
-    "jupyter",
+    "maturin>=1.7.4",
+    "jupyter>=1.1.1",
+    "scipy-stubs",
 ]
 test = [
     "pytest",
     "mypy",
+    "polars>=1.22.0",
 ]
 
 [tool.maturin]
