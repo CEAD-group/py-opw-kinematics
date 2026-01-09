@@ -133,7 +133,7 @@ class Robot:
     def batch_inverse(
         self,
         poses: RigidTransform,
-        current_joints: Optional["NumpyOrDataFrame | Tuple[float, float, float, float, float, float]"] = None,
+        current_joints: "Optional[NumpyOrDataFrame | Tuple[float, float, float, float, float, float]]" = None,
         ee_transform: Optional["RigidTransform"] = None,
     ) -> "NumpyOrDataFrame":
         """

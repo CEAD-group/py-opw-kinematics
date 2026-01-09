@@ -291,6 +291,56 @@ def test_batch_roundtrip(example_robot: Robot):
     assert np.isclose(joints_array, result_joints, atol=1e-3).all()
 
 
+def test_batch_inverse_current_joints_signatures(example_robot: Robot):
+    """Test batch_inverse with various current_joints input types."""
+    import polars as pl
+    import pandas as pd
+
+    robot = example_robot
+    ee_transform = RigidTransform.from_components(
+        rotation=Rotation.from_euler("xyz", [0, -90, 0], degrees=True),
+        translation=[0, 0, 0],
+    )
+
+    # Create test poses
+    joints_start = (0, 0, -90, 0, 0, 0)
+    poses = robot.batch_forward(
+        np.array([[0, 0, -90, 0, 0, 0], [10, 0, -90, 0, 0, 0]]),
+        ee_transform=ee_transform,
+    )
+
+    # Test 1: No current_joints - returns numpy array
+    result = robot.batch_inverse(poses, ee_transform=ee_transform)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (2, 6)
+
+    # Test 2: Tuple current_joints - returns numpy array
+    result = robot.batch_inverse(poses, current_joints=joints_start, ee_transform=ee_transform)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (2, 6)
+
+    # Test 3: Numpy array current_joints - returns numpy array
+    result = robot.batch_inverse(
+        poses, current_joints=np.array(joints_start), ee_transform=ee_transform
+    )
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (2, 6)
+
+    # Test 4: Polars DataFrame current_joints - returns polars DataFrame
+    pl_joints = pl.DataFrame({"J1": [0.0], "J2": [0.0], "J3": [-90.0], "J4": [0.0], "J5": [0.0], "J6": [0.0]})
+    result = robot.batch_inverse(poses, current_joints=pl_joints, ee_transform=ee_transform)
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape == (2, 6)
+    assert list(result.columns) == ["J1", "J2", "J3", "J4", "J5", "J6"]
+
+    # Test 5: Pandas DataFrame current_joints - returns pandas DataFrame
+    pd_joints = pd.DataFrame({"J1": [0.0], "J2": [0.0], "J3": [-90.0], "J4": [0.0], "J5": [0.0], "J6": [0.0]})
+    result = robot.batch_inverse(poses, current_joints=pd_joints, ee_transform=ee_transform)
+    assert isinstance(result, pd.DataFrame)
+    assert result.shape == (2, 6)
+    assert list(result.columns) == ["J1", "J2", "J3", "J4", "J5", "J6"]
+
+
 def test_interpolate_poses():
     """Test the interpolate_poses function with SLERP + linear interpolation."""
     from py_opw_kinematics import interpolate_poses

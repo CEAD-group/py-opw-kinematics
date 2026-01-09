@@ -35,6 +35,7 @@ test = [
     "mypy",
     "scipy-stubs",
     "polars>=1.22.0",
+    "pandas>=2.0.0",
 ]
 
 [tool.maturin]
