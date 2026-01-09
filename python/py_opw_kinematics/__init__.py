@@ -118,9 +118,9 @@ class Robot:
         """
         if hasattr(joints, "to_numpy"):
             if hasattr(joints, "select"):
-                arr = joints.select(_JOINT_COLS).to_numpy()
+                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
             else:
-                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr]
+                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
         else:
             arr = np.asarray(joints)
         joints_array = np.ascontiguousarray(arr, dtype=np.float64)
@@ -151,7 +151,7 @@ class Robot:
                 # DataFrame-like inputs (Pandas, Polars)
                 is_polars = hasattr(current_joints, "select")
                 if is_polars:
-                    arr = current_joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined]
+                    arr = current_joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined,operator]
                     output_kwargs = {"schema": _JOINT_COLS}
                 else:
                     arr = current_joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined,call-overload]
@@ -170,7 +170,7 @@ class Robot:
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_inverse(matrix_array, current_joints_tuple, ee_matrix)
 
-        return output_type(result_array, **output_kwargs) if output_type else result_array  # type: ignore[misc,arg-type]
+        return output_type(result_array, **output_kwargs) if output_type else result_array  # type: ignore[misc,arg-type,call-overload]
 
 
 def interpolate_poses(
