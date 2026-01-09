@@ -133,33 +133,32 @@ class Robot:
     def batch_inverse(
         self,
         poses: RigidTransform,
-        current_joints=None,
+        current_joints: Optional["NumpyOrDataFrame | Tuple[float, float, float, float, float, float]"] = None,
         ee_transform: Optional["RigidTransform"] = None,
-    ):
+    ) -> "NumpyOrDataFrame":
         """
         Compute inverse kinematics for multiple poses.
 
-        :param poses: List of RigidTransform objects.
+        :param poses: RigidTransform containing N poses.
         :param current_joints: Starting joint configuration for solution continuity.
-            Can be tuple, numpy array, or DataFrame row.
+            Can be tuple, numpy array, or single-row DataFrame.
         :param ee_transform: End effector transformation (optional).
         :return: Joint angles in same format as current_joints (numpy array if not specified).
         """
         # Detect output type from current_joints
         if current_joints is not None:
-            cj = np.atleast_2d(current_joints)
-            if hasattr(cj, "to_numpy"):
-                # convenience methods for DataFrame-like inputs (Pandas, Polars)
-                is_polars = hasattr(cj, "select")
+            if hasattr(current_joints, "to_numpy"):
+                # DataFrame-like inputs (Pandas, Polars)
+                is_polars = hasattr(current_joints, "select")
                 if is_polars:
-                    arr = cj.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined]
+                    arr = current_joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined]
                     output_kwargs = {"schema": _JOINT_COLS}
                 else:
-                    arr = cj[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
+                    arr = current_joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined,call-overload]
                     output_kwargs = {"columns": _JOINT_COLS}
                 output_type = type(current_joints)
             else:
-                arr = np.asarray(cj)
+                arr = np.atleast_2d(current_joints)
                 output_type, output_kwargs = None, {}
             current_joints_tuple = tuple(np.ascontiguousarray(arr, dtype=np.float64)[0])
         else:
@@ -171,7 +170,7 @@ class Robot:
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_inverse(matrix_array, current_joints_tuple, ee_matrix)
 
-        return output_type(result_array, **output_kwargs) if output_type else result_array
+        return output_type(result_array, **output_kwargs) if output_type else result_array  # type: ignore[misc,arg-type]
 
 
 def interpolate_poses(
