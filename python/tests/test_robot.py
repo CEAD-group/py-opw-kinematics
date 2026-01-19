@@ -372,6 +372,8 @@ def test_interpolate_poses_multi_keyframe():
         translation=[[0, 0, 0], [100, 0, 0], [100, 100, 0]],
     )
 
+    print(poses)
+
     trajectory = interpolate_poses([0, 1, 2], poses, [0, 0.5, 1, 1.5, 2])
 
     assert len(trajectory) == 5
