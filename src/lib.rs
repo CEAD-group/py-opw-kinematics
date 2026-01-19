@@ -51,9 +51,7 @@ impl Robot {
     /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
     #[pyo3(signature = (joints, ee_transform=None))]
     fn forward(&self, mut joints: [f64; 6], ee_transform: Option<[[f64; 4]; 4]>) -> [[f64; 4]; 4] {
-        if self.has_parallelogram {
-            joints[2] += joints[1];
-        }
+        if self.degrees {
             joints.iter_mut().for_each(|x| *x = x.to_radians());
         }
         let pose: Pose = self.robot.forward(&joints);
