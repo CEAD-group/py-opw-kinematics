@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "py-opw-kinematics"
 dynamic = ["version"]
-requires-python = ">=3.13"
+requires-python = "==3.14"
 description = "A Python wrapper for the rs-opw-kinematics library"
 authors = [{ name = "CEAD Group", email = "software@ceadgroup.com" }]
 classifiers = [
@@ -21,7 +21,7 @@ dependencies = [
 [tool.uv]
 dev-dependencies = [
     "pytest",
-    "scipy",
+    "scipy>1.16",
     "mypy",
     "scipy-stubs",
     "pip>=25.1.1",

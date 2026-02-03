@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 nalgebra = "0.33"
-pyo3 = "0.22.0"
+pyo3 = "0.28.0"
 rs-opw-kinematics = { version = ">=1.5.0, <2.0.0", default-features = false }
