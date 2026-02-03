@@ -17,6 +17,7 @@ struct Robot {
 }
 
 #[pyclass]
+#[pyo3(from_py_object)]
 #[derive(Clone, Debug)]
 struct BaseConfig {
     /// The translation of the base in the world frame
@@ -37,6 +38,7 @@ impl BaseConfig {
 }
 
 #[pyclass]
+#[pyo3(from_py_object)]
 #[derive(Clone, Debug)]
 struct ToolConfig {
     /// The translation of the tool in the base frame

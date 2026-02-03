@@ -4,6 +4,7 @@ use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 
 #[pyclass(frozen)] // Declare the class as frozen to provide immutability.
+#[pyo3(from_py_object)]
 #[derive(Clone)]
 pub struct KinematicModel {
     pub a1: f64,
