@@ -64,9 +64,9 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-    test:
-      needs: [linux-x64]
-      runs-on: ubuntu-latest
+  test:
+    needs: [linux-x64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
