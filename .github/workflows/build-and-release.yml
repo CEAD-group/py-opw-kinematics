@@ -11,42 +11,52 @@ on:
       - main
       - master
     tags:
-      - '*'
+      - 'v'
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  linux:
+ jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - name: Install Python linter
+        run: pip install ruff
+      - name: Lint Python code with ruff
+        run: ruff check .
+
+  linux-x64:
+    needs: [lint]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-22.04
-            target: x86
-          - runner: ubuntu-22.04
-            target: aarch64
-          - runner: ubuntu-22.04
-            target: armv7
-          - runner: ubuntu-22.04
-            target: s390x
-          - runner: ubuntu-22.04
-            target: ppc64le
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: 3.14.2
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+          sed -i "s#^version = \".*\"#version = \"$VERSION\"#" Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          sccache: 'true'
           manylinux: auto
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -54,38 +64,26 @@ jobs:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
-  musllinux:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: ubuntu-22.04
-            target: x86_64
-          - runner: ubuntu-22.04
-            target: x86
-          - runner: ubuntu-22.04
-            target: aarch64
-          - runner: ubuntu-22.04
-            target: armv7
+    test:
+      needs: [linux-x64]
+      runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: 3.14.2
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: musllinux_1_2
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-musllinux-${{ matrix.platform.target }}
-          path: dist
+      - name: Install py_opw_kinematics
+        run: |
+          WHL_FILE=$(ls dist/*cp314*.whl)
+          pip install "${WHL_FILE}[test]"
+      - name: Run tests with pytest
+        run: pytest
+      - name: Type checking with mypy
+        run: mypy python
 
   windows:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: [lint, test]
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -100,12 +98,19 @@ jobs:
         with:
           python-version: 3.14.2
           architecture: ${{ matrix.platform.target }}
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $VERSION = $env:GITHUB_REF -replace 'refs/tags/v',''
+          Write-Host "Setting version to $VERSION"
+          (Get-Content Cargo.toml) -replace '^version = ".*"', ('version = "' + $VERSION + '"') | Set-Content Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -126,12 +131,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.14.2
+      - name: Update Cargo.toml Version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+          sed -i '' "s#^version = \".*\"#version = \"$VERSION\"#" Cargo.toml
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -139,9 +149,20 @@ jobs:
           path: dist
 
   sdist:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.14.2
+      - name: Update Cargo.toml Version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Setting version to $VERSION"
+            sed -i "s#^version = \".*\"#version = \"$VERSION\"#" Cargo.toml
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -167,15 +188,19 @@ jobs:
       attestations: write
     steps:
       - uses: actions/download-artifact@v4
-      - name: Generate artifact attestation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.14.2
+      - name: Generate artifact attestatio
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: 'wheels-*/*'
-      - name: Publish to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: PyO3/maturin-action@v1
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          files: |
+            wheels-sdist/*.tar.gz
+            wheels-windows-*/*.whl
+            wheels-linux-*/*.whl
+            wheels-macos-*/*.whl
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
