@@ -355,7 +355,7 @@ impl Robot {
         out.push(to_matrix_4x4(&t));
 
         // J1: rotation around Z axis
-        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), -j[0]);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), j[0]);
         out.push(to_matrix_4x4(&t));
 
         // J2: translate by (a1, 0, c1), then rotate around Y
@@ -365,13 +365,12 @@ impl Robot {
 
         // J3: translate by (0, 0, c2), fixed rotation, then rotate around Y
         t *= nalgebra::Translation3::new(0.0, 0.0, params.c2);
-        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), -PI / 2.0);
-        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), j[2]);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::y_axis(), (-PI / 2.0) + j[2]);
         out.push(to_matrix_4x4(&t));
 
         // J4: translate by (0, 0, |a2|), then rotate around X
         t *= nalgebra::Translation3::new(0.0, 0.0, params.a2.abs());
-        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -j[3]);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), j[3]);
         out.push(to_matrix_4x4(&t));
 
         // J5: translate by (c3, 0, 0), then rotate around Y
@@ -381,7 +380,7 @@ impl Robot {
 
         // J6: translate by (c4, 0, 0), then rotate around X
         t *= nalgebra::Translation3::new(params.c4, 0.0, 0.0);
-        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), -j[5]);
+        t *= nalgebra::UnitQuaternion::from_axis_angle(&nalgebra::Vector3::x_axis(), j[5]);
         out.push(to_matrix_4x4(&t));
 
         // TCP: Apply end effector transformation
