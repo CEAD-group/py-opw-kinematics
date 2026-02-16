@@ -370,7 +370,7 @@ def test_interpolate_poses_multi_keyframe():
 
     # Three keyframes
     poses = RigidTransform.from_components(
-        rotation=Rotation.from_euler("Z", [0, 90, 180], degrees=True),
+        rotation=Rotation.from_euler("ZYX", [0, 90, 180], degrees=True),
         translation=[[0, 0, 0], [100, 0, 0], [100, 100, 0]],
     )
 
