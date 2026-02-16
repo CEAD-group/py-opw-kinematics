@@ -317,6 +317,10 @@ impl Robot {
             j.iter_mut().for_each(|x| *x = x.to_radians());
         }
 
+        if self.has_parallelogram {
+            j[2] += j[1];
+        }
+
         for i in 0..6 {
             if params.flip_axes[i] {
                 j[i] = -j[i];
