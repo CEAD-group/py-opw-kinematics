@@ -141,7 +141,6 @@ def test_robot_inverse_with_ee_translation(
 @pytest.mark.parametrize("offsets", [(0, 0, 0, 0, 0, 0), (1, 2, 3, 4, 5, 6)])
 def test_robot_kinematics_roundtrip(
     joints,
-
     ee_translation,
     ee_rotation,
     degrees,
