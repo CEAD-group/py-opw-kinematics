@@ -364,6 +364,64 @@ def test_forward_frames_tcp_matches_forward(example_robot: Robot, joints):
     assert np.allclose(tcp_forward.as_matrix(), tcp_frames.as_matrix(), atol=1e-10)
 
 
+@pytest.mark.parametrize(
+    "joints",
+    [
+        (0, 0, -90, 0, 0, 0),
+        (10, 0, -90, 0, 0, 0),
+        (10, 10, -80, 0, 0, 0),
+        (0, 0, -90, 0, 10, 0),
+        (0, 0, -90, 10, 10, 0),
+        (10, 20, -70, 30, 20, 10),
+    ],
+)
+def test_joint_poses_tcp_matches_forward(example_robot: Robot, joints):
+    """Last pose from joint_poses must match forward output."""
+    tcp_forward = example_robot.forward(joints)
+    poses = example_robot.joint_poses(joints)
+    assert len(poses) == 6
+    assert np.allclose(tcp_forward.as_matrix(), poses[-1].as_matrix(), atol=1e-10)
+
+
+def test_joint_poses_with_ee_transform(
+    example_robot: Robot, example_ee_rotation: Rotation
+):
+    """joint_poses with ee_transform appends a 7th pose matching forward."""
+    joints = (10, 20, -70, 30, 20, 10)
+    ee = RigidTransform.from_components(
+        rotation=example_ee_rotation, translation=[100, 200, 300]
+    )
+
+    tcp_forward = example_robot.forward(joints, ee_transform=ee)
+    poses = example_robot.joint_poses(joints, ee_transform=ee)
+    assert len(poses) == 7
+    assert np.allclose(tcp_forward.as_matrix(), poses[-1].as_matrix(), atol=1e-10)
+    # First 6 poses should be the same as without ee_transform
+    poses_no_ee = example_robot.joint_poses(joints)
+    for i in range(6):
+        assert np.allclose(
+            poses[i].as_matrix(), poses_no_ee[i].as_matrix(), atol=1e-10
+        )
+
+
+def test_batch_joint_poses(example_robot: Robot):
+    """batch_joint_poses matches joint_poses for each config."""
+    joints_list = [
+        (0, 0, -90, 0, 0, 0),
+        (10, 10, -80, 0, 0, 0),
+        (10, 20, -70, 30, 20, 10),
+    ]
+    joints_array = np.array(joints_list, dtype=float)
+
+    batch_result = example_robot.batch_joint_poses(joints_array)
+    batch_matrices = batch_result.as_matrix().reshape(len(joints_list), 6, 4, 4)
+
+    for i, joints in enumerate(joints_list):
+        single = example_robot.joint_poses(joints)
+        single_matrices = single.as_matrix()
+        assert np.allclose(single_matrices, batch_matrices[i]), f"Mismatch at config {i}"
+
+
 def test_interpolate_poses():
     """Test the interpolate_poses function with SLERP + linear interpolation."""
     from py_opw_kinematics import interpolate_poses

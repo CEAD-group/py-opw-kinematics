@@ -110,6 +110,35 @@ class Robot:
         """
         ...
 
+    def joint_poses(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Compute per-joint poses using the OPW FK chain (consistent with forward()).
+
+        :param joints: Joint angles (J1-J6).
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
+        :return: List of 4x4 transformation matrices for [J1, J2, J3, J4, J5, J6/TCP].
+            When ee_transform is given, a 7th TCP+EE pose is appended.
+        """
+        ...
+
+    def batch_joint_poses(
+        self,
+        joints: npt.NDArray[np.float64],
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Compute per-joint poses for multiple joint configurations.
+
+        :param joints: NumPy array of shape (n, 6) with joint angles.
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
+        :return: NumPy array of shape (n*6, 16) or (n*7, 16) with flattened 4x4 matrices.
+        """
+        ...
+
     def forward_frames(
         self,
         joints: Tuple[float, float, float, float, float, float],

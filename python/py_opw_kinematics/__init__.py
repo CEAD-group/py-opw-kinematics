@@ -88,6 +88,51 @@ class Robot:
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         return self._robot.inverse(matrix_4x4, current_joints, ee_matrix)
 
+    def joint_poses(
+        self,
+        joints: Tuple[float, float, float, float, float, float],
+        ee_transform: Optional["RigidTransform"] = None,
+    ) -> RigidTransform:
+        """
+        Compute per-joint poses using the OPW FK chain (consistent with forward()).
+
+        :param joints: Joint angles (J1-J6).
+        :param ee_transform: End effector transformation (optional).
+            When provided, an additional TCP+EE pose is appended.
+        :return: RigidTransform with 6 poses [J1, J2, J3, J4, J5, J6/TCP],
+            or 7 poses [..., TCP+EE] when ee_transform is given.
+        """
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        raw = np.array(self._robot.joint_poses(joints, ee_matrix))
+        return RigidTransform.from_matrix(raw)
+
+    def batch_joint_poses(
+        self,
+        joints: "NumpyOrDataFrame",
+        ee_transform: Optional["RigidTransform"] = None,
+    ) -> RigidTransform:
+        """
+        Compute per-joint poses for multiple joint configurations.
+
+        :param joints: Joint angles as numpy array (N,6), or DataFrame with columns J1-J6.
+        :param ee_transform: End effector transformation (optional).
+        :return: RigidTransform with N*6 poses (or N*7 when ee_transform is given).
+            Reshape to (N, 6, 4, 4) or (N, 7, 4, 4) for per-config access.
+        """
+        if hasattr(joints, "to_numpy"):
+            if hasattr(joints, "select"):
+                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
+            else:
+                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
+        else:
+            arr = np.asarray(joints)
+        joints_array = np.ascontiguousarray(arr, dtype=np.float64)
+
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        result_array = self._robot.batch_joint_poses(joints_array, ee_matrix)
+
+        return RigidTransform.from_matrix(result_array.reshape(-1, 4, 4))
+
     def forward_frames(
         self,
         joints: Tuple[float, float, float, float, float, float],
