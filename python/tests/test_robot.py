@@ -358,7 +358,8 @@ def test_batch_inverse_current_joints_signatures(example_robot: Robot):
 def test_forward_frames_tcp_matches_forward(example_robot: Robot, joints):
     """TCP from forward_frames must match forward output."""
     tcp_forward = example_robot.forward(joints)
-    frames = example_robot.forward_frames(joints)
+    with pytest.warns(DeprecationWarning, match="forward_frames"):
+        frames = example_robot.forward_frames(joints)
     tcp_frames = frames[-1]
 
     assert np.allclose(tcp_forward.as_matrix(), tcp_frames.as_matrix(), atol=1e-10)

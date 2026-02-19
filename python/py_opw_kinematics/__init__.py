@@ -141,10 +141,22 @@ class Robot:
         """
         Compute 4x4 transform matrices for all robot links.
 
+        .. deprecated:: 1.2.0
+            Use :meth:`joint_poses` instead. ``forward_frames`` uses incorrect
+            rotation axes (X instead of Z for J4/J6) and wrong translation axes,
+            producing incorrect orientations. Translations are correct.
+
         :param joints: Joint angles (J1-J6).
         :param ee_transform: End effector transformation (optional).
         :return: List of RigidTransforms for [Base, J1, J2, J3, J4, J5, J6, TCP].
         """
+        import warnings
+        warnings.warn(
+            "forward_frames() is deprecated and produces incorrect rotations. "
+            "Use joint_poses() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         raw_frames = np.array(self._robot.forward_frames(joints, ee_matrix))
         return RigidTransform.from_matrix(raw_frames)
