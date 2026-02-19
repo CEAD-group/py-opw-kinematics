@@ -327,8 +327,8 @@ impl Robot {
 
     /// Batch version of joint_poses.
     /// Input: joints array of shape (n, 6)
-    /// Output: array of shape (n, 6, 16) — 6 poses per config, each flattened row-major.
-    /// When ee_transform is provided, output shape is (n, 7, 16) with the 7th being TCP+EE.
+    /// Output: array of shape (n*6, 16) — 6 poses per config, flattened row-major 4x4 matrices.
+    /// When ee_transform is provided, output shape is (n*7, 16) with the 7th being TCP+EE.
     #[pyo3(signature = (joints, ee_transform=None))]
     fn batch_joint_poses<'py>(
         &self,
@@ -341,12 +341,13 @@ impl Robot {
         let poses_per_config = if ee_transform.is_some() { 7 } else { 6 };
 
         let mut results: Vec<f64> = Vec::with_capacity(n * poses_per_config * 16);
+        let nan_fill: Vec<f64> = vec![f64::NAN; poses_per_config * 16];
 
         for i in 0..n {
             let row = joints_array.row(i);
 
             if row.iter().any(|v| v.is_nan()) {
-                results.extend_from_slice(&vec![f64::NAN; poses_per_config * 16]);
+                results.extend_from_slice(&nan_fill);
                 continue;
             }
 

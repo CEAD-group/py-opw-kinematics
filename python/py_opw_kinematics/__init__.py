@@ -143,8 +143,8 @@ class Robot:
 
         .. deprecated:: 1.2.0
             Use :meth:`joint_poses` instead. ``forward_frames`` uses incorrect
-            rotation axes (X instead of Z for J4/J6) and wrong translation axes,
-            producing incorrect orientations. Translations are correct.
+            rotation axes (X instead of Z for J4/J6), producing incorrect
+            orientations. Translations are correct.
 
         :param joints: Joint angles (J1-J6).
         :param ee_transform: End effector transformation (optional).

@@ -423,6 +423,29 @@ def test_batch_joint_poses(example_robot: Robot):
         assert np.allclose(single_matrices, batch_matrices[i]), f"Mismatch at config {i}"
 
 
+def test_batch_joint_poses_with_ee_transform(
+    example_robot: Robot, example_ee_rotation: Rotation
+):
+    """batch_joint_poses with ee_transform matches joint_poses for each config."""
+    joints_list = [
+        (0, 0, -90, 0, 0, 0),
+        (10, 10, -80, 0, 0, 0),
+        (10, 20, -70, 30, 20, 10),
+    ]
+    joints_array = np.array(joints_list, dtype=float)
+    ee = RigidTransform.from_components(
+        rotation=example_ee_rotation, translation=[100, 200, 300]
+    )
+
+    batch_result = example_robot.batch_joint_poses(joints_array, ee_transform=ee)
+    batch_matrices = batch_result.as_matrix().reshape(len(joints_list), 7, 4, 4)
+
+    for i, joints in enumerate(joints_list):
+        single = example_robot.joint_poses(joints, ee_transform=ee)
+        single_matrices = single.as_matrix()
+        assert np.allclose(single_matrices, batch_matrices[i]), f"Mismatch at config {i}"
+
+
 def test_interpolate_poses():
     """Test the interpolate_poses function with SLERP + linear interpolation."""
     from py_opw_kinematics import interpolate_poses
