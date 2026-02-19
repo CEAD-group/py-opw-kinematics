@@ -15,7 +15,6 @@ pub struct KinematicModel {
     pub c4: f64,
     pub offsets: [f64; 6],
     pub flip_axes: [bool; 6], // Renamed and changed to boolean array
-    pub has_parallelogram: bool,
 }
 
 impl KinematicModel {
@@ -58,7 +57,6 @@ impl KinematicModel {
         c4 = 0.0,
         offsets = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         flip_axes = (false, false, false, false, false, false),
-        has_parallelogram = false
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -71,7 +69,6 @@ impl KinematicModel {
         c4: f64,
         offsets: (f64, f64, f64, f64, f64, f64),
         flip_axes: (bool, bool, bool, bool, bool, bool),
-        has_parallelogram: bool,
     ) -> PyResult<Self> {
         Ok(KinematicModel {
             a1,
@@ -83,7 +80,6 @@ impl KinematicModel {
             c4,
             offsets: offsets.into(),
             flip_axes: flip_axes.into(),
-            has_parallelogram,
         })
     }
 
@@ -133,16 +129,11 @@ impl KinematicModel {
         self.flip_axes.to_vec() // Convert the array to a Vec for easier handling in Python.
     }
 
-    #[getter]
-    pub fn has_parallelogram(&self) -> bool {
-        self.has_parallelogram
-    }
-
     pub fn __repr__(&self) -> String {
         format!(
-            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n    has_parallelogram={}\n)",
+            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n)",
             self.a1, self.a2, self.b, self.c1, self.c2, self.c3, self.c4,
-            self.offsets, self.flip_axes, self.has_parallelogram
+            self.offsets, self.flip_axes
         )
     }
 }

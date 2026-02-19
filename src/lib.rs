@@ -12,7 +12,6 @@ use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 #[pyclass]
 struct Robot {
     robot: OPWKinematics,
-    has_parallelogram: bool,
     degrees: bool,
     _kinematic_model: KinematicModel,
 }
@@ -23,11 +22,9 @@ impl Robot {
     #[pyo3(signature = (kinematic_model, degrees=true))]
     fn new(kinematic_model: KinematicModel, degrees: bool) -> PyResult<Self> {
         let robot = kinematic_model.to_opw_kinematics(degrees);
-        let has_parallelogram = kinematic_model.has_parallelogram;
 
         Ok(Robot {
             robot,
-            has_parallelogram,
             degrees,
             _kinematic_model: kinematic_model,
         })
@@ -54,9 +51,6 @@ impl Robot {
     /// ee_transform: 4x4 transformation matrix in row-major format (optional, identity if None)
     #[pyo3(signature = (joints, ee_transform=None))]
     fn forward(&self, mut joints: [f64; 6], ee_transform: Option<[[f64; 4]; 4]>) -> [[f64; 4]; 4] {
-        if self.has_parallelogram {
-            joints[2] += joints[1];
-        }
         if self.degrees {
             joints.iter_mut().for_each(|x| *x = x.to_radians());
         }
@@ -177,9 +171,6 @@ impl Robot {
 
         let mut solutions = match current_joints {
             Some(mut joints) => {
-                if self.has_parallelogram {
-                    joints[2] += joints[1];
-                }
                 if self.degrees {
                     joints.iter_mut().for_each(|x| *x = x.to_radians());
                 }
@@ -187,10 +178,6 @@ impl Robot {
             }
             None => self.robot.inverse(&iso_pose),
         };
-
-        if self.has_parallelogram {
-            solutions.iter_mut().for_each(|x| x[2] -= x[1]);
-        }
 
         if self.degrees {
             solutions.iter_mut().for_each(|x| {

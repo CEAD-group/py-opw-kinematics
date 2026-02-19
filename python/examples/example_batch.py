@@ -20,7 +20,6 @@ kinematic_model = KinematicModel(
     c4=230,
     offsets=(0, 0, 0, 0, 0, 0),
     flip_axes=(True, False, True, True, False, True),
-    has_parallelogram=True,
 )
 
 robot = Robot(kinematic_model, degrees=True)

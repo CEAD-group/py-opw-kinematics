@@ -16,7 +16,6 @@ def example_robot() -> Robot:
         c4=230,
         offsets=(0, 0, 0, 0, 0, 0),
         flip_axes=(True, False, True, True, False, True),
-        has_parallelogram=True,
     )
     return Robot(kinematic_model, degrees=True)
 
@@ -31,11 +30,11 @@ def example_ee_rotation() -> Rotation:
     [
         ([0, 0, -90, 0, 0, 0], [2073.926, 0.0, 2259.005], None),
         ([10, 0, -90, 0, 0, 0], [2042.418, -360.133, 2259.005], None),
-        ([10, 10, -90, 0, 0, 0], [2243.792, -395.641, 2241.115], None),
+        ([10, 10, -80, 0, 0, 0], [2243.792, -395.641, 2241.115], None),
         ([0, 0, -90, 0, 10, 0], [2070.432, 0.0, 2219.066], None),
         ([0, 0, -90, 10, 10, 0], [2070.432, -6.935, 2219.673], None),
         (
-            [10, 20, -90, 30, 20, 10],
+            [10, 20, -70, 30, 20, 10],
             [2418.558, -466.396, 2119.864],
             [-37.346, 25.987, -4.814],
         ),
@@ -68,7 +67,7 @@ def test_robot_forward_kinematics(
     [
         ([0, 0, -90, 0, 0, 0], [2308.022, 132.200, 1707.280], [0, 0, 0]),
         (
-            [10, 20, -90, 30, 20, 10],
+            [10, 20, -70, 30, 20, 10],
             [2396.467, -743.091, 1572.479],
             [-37.346, 25.987, -4.814],
         ),
@@ -102,7 +101,7 @@ def test_robot_inverse_with_ee_translation(
 ):
     robot = example_robot
     ee_translation = [234.096, 132.2, -551.725]
-    expected_joints = [10, 20, -90, 30, 20, 10]
+    expected_joints = [10, 20, -70, 30, 20, 10]
 
     ee_transform = RigidTransform.from_components(
         rotation=example_ee_rotation, translation=ee_translation
@@ -128,7 +127,7 @@ def test_robot_inverse_with_ee_translation(
 @pytest.mark.parametrize(
     "joints", [[-10, 0, -30, 10, 10, -10], [10, 20, -90, 30, 20, 10]]
 )
-@pytest.mark.parametrize("has_parallelogram", [True, False])
+
 @pytest.mark.parametrize("ee_translation", [[0, 0, 0], [100, 200, 300]])
 @pytest.mark.parametrize("ee_rotation", [[0, 0, 0], [0, -90, 0], [30, 40, 60]])
 @pytest.mark.parametrize("degrees", [True, False])
@@ -142,7 +141,6 @@ def test_robot_inverse_with_ee_translation(
 @pytest.mark.parametrize("offsets", [(0, 0, 0, 0, 0, 0), (1, 2, 3, 4, 5, 6)])
 def test_robot_kinematics_roundtrip(
     joints,
-    has_parallelogram,
     ee_translation,
     ee_rotation,
     degrees,
@@ -159,7 +157,6 @@ def test_robot_kinematics_roundtrip(
         c4=7,
         offsets=offsets,
         flip_axes=flip_axes,
-        has_parallelogram=has_parallelogram,
     )
 
     robot = Robot(kinematic_model, degrees=degrees)

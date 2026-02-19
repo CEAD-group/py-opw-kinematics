@@ -56,8 +56,6 @@ To use the library, create a `KinematicModel` instance with the appropriate valu
 kinematic parameters and any joint offsets required to bring the paper's zero position (arm up in Z) to the
 manufacturer's position. The direction of each of the axes can be flipped with the `flip_axes` parameter if your robot's axes do not match the convention in the paper.
 
-If the robot has a parallelogram between joints 2 and 3, set `has_parallelogram` to `True` to link these axes.
-
 ### Basic Example
 
 ```python
@@ -76,7 +74,6 @@ kinematic_model = KinematicModel(
     c4=230,
     offsets=(0, 0, 0, 0, 0, 0),
     flip_axes=(True, False, True, True, False, True),
-    has_parallelogram=True,
 )
 
 # Create robot (degrees=True means joint angles are in degrees)
