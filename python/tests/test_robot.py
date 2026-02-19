@@ -338,6 +338,32 @@ def test_batch_inverse_current_joints_signatures(example_robot: Robot):
     assert list(result.columns) == ["J1", "J2", "J3", "J4", "J5", "J6"]
 
 
+@pytest.mark.parametrize(
+    "joints",
+    [
+        (0, 0, -90, 0, 0, 0),
+        (10, 0, -90, 0, 0, 0),
+        (10, 10, -80, 0, 0, 0),
+        (0, 0, -90, 0, 10, 0),
+        (0, 0, -90, 10, 10, 0),
+        (10, 20, -70, 30, 20, 10),
+    ],
+)
+@pytest.mark.xfail(
+    reason="forward_frames builds FK chain manually and uses a different axis convention "
+    "than forward (which delegates to rs-opw-kinematics). Translations match but "
+    "rotations differ.",
+    strict=True,
+)
+def test_forward_frames_tcp_matches_forward(example_robot: Robot, joints):
+    """TCP from forward_frames must match forward output."""
+    tcp_forward = example_robot.forward(joints)
+    frames = example_robot.forward_frames(joints)
+    tcp_frames = frames[-1]
+
+    assert np.allclose(tcp_forward.as_matrix(), tcp_frames.as_matrix(), atol=1e-10)
+
+
 def test_interpolate_poses():
     """Test the interpolate_poses function with SLERP + linear interpolation."""
     from py_opw_kinematics import interpolate_poses
