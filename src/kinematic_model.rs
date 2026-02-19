@@ -131,7 +131,7 @@ impl KinematicModel {
 
     pub fn __repr__(&self) -> String {
         format!(
-            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n",
+            "KinematicModel(\n    a1={},\n    a2={},\n    b={},\n    c1={},\n    c2={},\n    c3={},\n    c4={},\n    offsets={:?},\n    flip_axes={:?},\n)",
             self.a1, self.a2, self.b, self.c1, self.c2, self.c3, self.c4,
             self.offsets, self.flip_axes
         )
