@@ -276,6 +276,99 @@ impl Robot {
         Ok(result_array.into_pyarray(py).into())
     }
 
+    /// Compute per-joint poses using the rs-opw-kinematics FK chain.
+    /// Returns: Vec<[[f64; 4]; 4]> of 6 poses (row-major 4x4 matrices)
+    /// Order: [J1, J2, J3, J4, J5, J6/TCP]
+    /// The last pose includes the c4 wrist offset. Use ee_transform to add
+    /// an additional end-effector offset on top.
+    #[pyo3(signature = (joints, ee_transform=None))]
+    fn joint_poses(
+        &self,
+        mut joints: [f64; 6],
+        ee_transform: Option<[[f64; 4]; 4]>,
+    ) -> Vec<[[f64; 4]; 4]> {
+        if self.degrees {
+            joints.iter_mut().for_each(|x| *x = x.to_radians());
+        }
+        let poses: [Pose; 6] = self.robot.forward_with_joint_poses(&joints);
+
+        let to_matrix_4x4 = |iso: &Isometry3<f64>| -> [[f64; 4]; 4] {
+            let matrix = iso.to_matrix();
+            [
+                [matrix[(0, 0)], matrix[(0, 1)], matrix[(0, 2)], matrix[(0, 3)]],
+                [matrix[(1, 0)], matrix[(1, 1)], matrix[(1, 2)], matrix[(1, 3)]],
+                [matrix[(2, 0)], matrix[(2, 1)], matrix[(2, 2)], matrix[(2, 3)]],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        };
+
+        let mut out: Vec<[[f64; 4]; 4]> = poses.iter().map(to_matrix_4x4).collect();
+
+        // Apply ee_transform to the last pose (TCP) if provided
+        if let Some(ee_matrix) = ee_transform {
+            let flattened: Vec<f64> = ee_matrix.into_iter().flatten().collect();
+            let ee_mat = nalgebra::Matrix4::from_row_slice(&flattened);
+            let ee_rotation =
+                Rotation3::from_matrix_unchecked(ee_mat.fixed_view::<3, 3>(0, 0).into());
+            let ee_translation: Vector3<f64> = ee_mat.fixed_view::<3, 1>(0, 3).into();
+
+            let tcp = &poses[5];
+            let combined_rotation = tcp.rotation.to_rotation_matrix() * ee_rotation;
+            let final_translation = tcp.translation.vector + combined_rotation * ee_translation;
+            let tcp_with_ee = Isometry3::from_parts(
+                Translation3::from(final_translation),
+                nalgebra::UnitQuaternion::from_rotation_matrix(&combined_rotation),
+            );
+            out.push(to_matrix_4x4(&tcp_with_ee));
+        }
+
+        out
+    }
+
+    /// Batch version of joint_poses.
+    /// Input: joints array of shape (n, 6)
+    /// Output: array of shape (n*6, 16) — 6 poses per config, flattened row-major 4x4 matrices.
+    /// When ee_transform is provided, output shape is (n*7, 16) with the 7th being TCP+EE.
+    #[pyo3(signature = (joints, ee_transform=None))]
+    fn batch_joint_poses<'py>(
+        &self,
+        py: Python<'py>,
+        joints: PyReadonlyArray2<'py, f64>,
+        ee_transform: Option<[[f64; 4]; 4]>,
+    ) -> PyResult<Py<PyArray2<f64>>> {
+        let joints_array = joints.as_array();
+        let n = joints_array.nrows();
+        let poses_per_config = if ee_transform.is_some() { 7 } else { 6 };
+
+        let mut results: Vec<f64> = Vec::with_capacity(n * poses_per_config * 16);
+        let nan_fill: Vec<f64> = vec![f64::NAN; poses_per_config * 16];
+
+        for i in 0..n {
+            let row = joints_array.row(i);
+
+            if row.iter().any(|v| v.is_nan()) {
+                results.extend_from_slice(&nan_fill);
+                continue;
+            }
+
+            let joints_input = [row[0], row[1], row[2], row[3], row[4], row[5]];
+            let frames = self.joint_poses(joints_input, ee_transform);
+
+            for frame in &frames {
+                for r in 0..4 {
+                    for c in 0..4 {
+                        results.push(frame[r][c]);
+                    }
+                }
+            }
+        }
+
+        let result_array = Array2::from_shape_vec((n * poses_per_config, 16), results)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
+
+        Ok(result_array.into_pyarray(py).into())
+    }
+
     /// Compute 4x4 transform matrices for all robot links
     /// Returns: Vec<[[f64; 4]; 4]> where each element is a 4x4 matrix (row-major)
     /// Order: [Base, J1, J2, J3, J4, J5, J6, TCP]
