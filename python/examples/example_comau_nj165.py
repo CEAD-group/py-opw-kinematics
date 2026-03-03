@@ -91,6 +91,6 @@ if solutions:
 # Get all link frames
 print("\nLink frames:")
 poses = robot.joint_poses(joints, ee_transform=ee_transform)
-frame_names = ["J1", "J2", "J3", "J4", "J5", "J6/TCP", "TCP+EE"]
+frame_names = ["J1", "J2", "J3", "J4", "J5", "J6", "EE"]
 for i, name in enumerate(frame_names):
     print(f"  {name}: {np.round(poses[i].translation, 1)}")

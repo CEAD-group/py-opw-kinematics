@@ -120,8 +120,8 @@ class Robot:
 
         :param joints: Joint angles (J1-J6).
         :param ee_transform: End effector transformation matrix (4x4) (optional).
-        :return: List of 4x4 transformation matrices for [J1, J2, J3, J4, J5, J6/TCP].
-            When ee_transform is given, a 7th TCP+EE pose is appended.
+        :return: List of 4x4 transformation matrices for [J1, J2, J3, J4, J5, J6].
+            When ee_transform is given, a 7th EE pose is appended.
         """
         ...
 

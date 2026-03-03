@@ -98,9 +98,9 @@ class Robot:
 
         :param joints: Joint angles (J1-J6).
         :param ee_transform: End effector transformation (optional).
-            When provided, an additional TCP+EE pose is appended.
-        :return: RigidTransform with 6 poses [J1, J2, J3, J4, J5, J6/TCP],
-            or 7 poses [..., TCP+EE] when ee_transform is given.
+            When provided, an additional EE pose is appended.
+        :return: RigidTransform with 6 poses [J1, J2, J3, J4, J5, J6],
+            or 7 poses [..., EE] when ee_transform is given.
         """
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         raw = np.array(self._robot.joint_poses(joints, ee_matrix))
