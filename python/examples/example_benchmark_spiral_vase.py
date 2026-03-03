@@ -99,12 +99,15 @@ solved_idx = np.where(solved_mask)[0]
 rng = np.random.default_rng(42)
 sample_idx = rng.choice(solved_idx, size=min(50, len(solved_idx)), replace=False)
 
-errors_t, errors_r = [], []
-for i in sample_idx:
-    pose_orig = trajectory[i]
-    pose_fk = robot.forward(tuple(joints[i]), ee_transform=ee_transform)
-    errors_t.append(np.linalg.norm(pose_orig.translation - pose_fk.translation))
-    errors_r.append(np.degrees((pose_orig.rotation.inv() * pose_fk.rotation).magnitude()))
+if len(sample_idx) == 0:
+    print("  No solved poses available; skipping accuracy check.")
+else:
+    errors_t, errors_r = [], []
+    for i in sample_idx:
+        pose_orig = trajectory[i]
+        pose_fk = robot.forward(tuple(joints[i]), ee_transform=ee_transform)
+        errors_t.append(np.linalg.norm(pose_orig.translation - pose_fk.translation))
+        errors_r.append(np.degrees((pose_orig.rotation.inv() * pose_fk.rotation).magnitude()))
 
-print(f"  Max translation error : {max(errors_t):.2e} mm")
-print(f"  Max rotation error    : {max(errors_r):.2e} deg")
+    print(f"  Max translation error : {max(errors_t):.2e} mm")
+    print(f"  Max rotation error    : {max(errors_r):.2e} deg")

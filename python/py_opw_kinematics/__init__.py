@@ -141,7 +141,7 @@ class Robot:
         """
         Compute 4x4 transform matrices for all robot links.
 
-        .. deprecated:: 1.2.0
+        .. deprecated:: 1.1.1
             Use :meth:`joint_poses` instead. ``forward_frames`` uses incorrect
             rotation axes (X instead of Z for J4/J6), producing incorrect
             orientations. Translations are correct.
