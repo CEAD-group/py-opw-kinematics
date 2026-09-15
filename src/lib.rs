@@ -1,20 +1,31 @@
 mod kinematic_model;
+mod reach;
 use crate::kinematic_model::KinematicModel;
 
 use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
 use pyo3::prelude::*;
 
-use numpy::ndarray::Array2;
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray2};
+use numpy::ndarray::{Array1, Array2, Array3};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
+use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 
 #[pyclass]
 struct Robot {
     robot: OPWKinematics,
+    parameters: Parameters,
     degrees: bool,
     _kinematic_model: KinematicModel,
 }
+
+type ReachArrays = (
+    Py<PyArray3<f64>>,
+    Py<PyArray2<f64>>,
+    Py<PyArray1<f64>>,
+    Py<PyArray2<f64>>,
+    Py<PyArray2<f64>>,
+);
 
 #[pymethods]
 impl Robot {
@@ -22,9 +33,11 @@ impl Robot {
     #[pyo3(signature = (kinematic_model, degrees=true))]
     fn new(kinematic_model: KinematicModel, degrees: bool) -> PyResult<Self> {
         let robot = kinematic_model.to_opw_kinematics(degrees);
+        let parameters = kinematic_model.to_parameters(degrees);
 
         Ok(Robot {
             robot,
+            parameters,
             degrees,
             _kinematic_model: kinematic_model,
         })
@@ -367,6 +380,110 @@ impl Robot {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
 
         Ok(result_array.into_pyarray(py).into())
+    }
+
+    /// All eight inverse-kinematics branches per pose, with per-branch margins.
+    /// Input: poses array of shape (n, 16), rows containing 4x4 matrices in row-major format
+    /// joint_limits: optional (6, 2) lower/upper bounds in the robot's angle unit
+    /// Returns: (joints (n, 8, 6), limit_margin (n, 8), extension (n,), sigma_min (n, 8), wrist (n, 8))
+    /// Branch slot s = 4 * wrist_flip + 2 * shoulder + elbow; NaN means the branch does not exist.
+    /// No continuity selection, limit filtering or sorting is applied.
+    #[pyo3(signature = (poses, joint_limits=None, ee_transform=None))]
+    fn reach<'py>(
+        &self,
+        py: Python<'py>,
+        poses: PyReadonlyArray2<'py, f64>,
+        joint_limits: Option<[[f64; 2]; 6]>,
+        ee_transform: Option<[[f64; 4]; 4]>,
+    ) -> PyResult<ReachArrays> {
+        let poses_array = poses.as_array();
+        if poses_array.ncols() != 16 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "poses must have shape (n, 16)",
+            ));
+        }
+        let n = poses_array.nrows();
+
+        // Same convention as forward/inverse: the ee translation is expressed in
+        // the frame after the ee rotation, so t_tcp = t_flange + R_tcp * t_ee.
+        let (ee_rotation, ee_translation) = if let Some(ee_matrix) = ee_transform {
+            let flattened: Vec<f64> = ee_matrix.into_iter().flatten().collect();
+            let matrix = nalgebra::Matrix4::from_row_slice(&flattened);
+            let ee_rotation: nalgebra::Matrix3<f64> = matrix.fixed_view::<3, 3>(0, 0).into();
+            let ee_translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            (ee_rotation, ee_translation)
+        } else {
+            (nalgebra::Matrix3::identity(), Vector3::zeros())
+        };
+        let ee_rotation_inv = ee_rotation.transpose();
+        let ee_offset_in_flange = ee_rotation * ee_translation;
+
+        // Limits are converted to radians so the margin is computed in the kernel's unit.
+        let limits_rad = joint_limits.map(|lim| {
+            lim.map(|[lo, hi]| {
+                if self.degrees {
+                    [lo.to_radians(), hi.to_radians()]
+                } else {
+                    [lo, hi]
+                }
+            })
+        });
+        let scale = if self.degrees { 180.0 / std::f64::consts::PI } else { 1.0 };
+
+        let mut joints: Vec<f64> = Vec::with_capacity(n * 48);
+        let mut margins: Vec<f64> = Vec::with_capacity(n * 8);
+        let mut extension: Vec<f64> = Vec::with_capacity(n);
+        let mut sigma: Vec<f64> = Vec::with_capacity(n * 8);
+        let mut wrist: Vec<f64> = Vec::with_capacity(n * 8);
+
+        for i in 0..n {
+            let row = poses_array.row(i);
+
+            let result = if row.iter().any(|v| v.is_nan()) {
+                reach::PoseReach::nan()
+            } else {
+                let values: [f64; 16] = std::array::from_fn(|k| row[k]);
+                let target = nalgebra::Matrix4::from_row_slice(&values);
+                let target_rotation: nalgebra::Matrix3<f64> = target.fixed_view::<3, 3>(0, 0).into();
+                let target_translation: Vector3<f64> = target.fixed_view::<3, 1>(0, 3).into();
+                let flange_rotation = target_rotation * ee_rotation_inv;
+                let flange_translation = target_translation - target_rotation * ee_translation;
+                let flange = Isometry3::from_parts(
+                    Translation3::from(flange_translation),
+                    nalgebra::UnitQuaternion::from_rotation_matrix(
+                        &Rotation3::from_matrix_unchecked(flange_rotation),
+                    ),
+                );
+                reach::reach_pose(&self.robot, &self.parameters, &flange, &ee_offset_in_flange)
+            };
+
+            for s in 0..8 {
+                let q = result.joints[s];
+                let margin = if q[0].is_nan() {
+                    f64::NAN
+                } else if let Some(lim) = limits_rad {
+                    (0..6)
+                        .map(|j| (q[j] - lim[j][0]).min(lim[j][1] - q[j]))
+                        .fold(f64::INFINITY, f64::min)
+                } else {
+                    f64::INFINITY
+                };
+                joints.extend(q.iter().map(|a| a * scale));
+                margins.push(margin * scale);
+            }
+            extension.push(result.extension);
+            sigma.extend_from_slice(&result.sigma_min);
+            wrist.extend_from_slice(&result.wrist);
+        }
+
+        let err = |e: numpy::ndarray::ShapeError| pyo3::exceptions::PyValueError::new_err(format!("{}", e));
+        Ok((
+            Array3::from_shape_vec((n, 8, 6), joints).map_err(err)?.into_pyarray(py).into(),
+            Array2::from_shape_vec((n, 8), margins).map_err(err)?.into_pyarray(py).into(),
+            Array1::from_vec(extension).into_pyarray(py).into(),
+            Array2::from_shape_vec((n, 8), sigma).map_err(err)?.into_pyarray(py).into(),
+            Array2::from_shape_vec((n, 8), wrist).map_err(err)?.into_pyarray(py).into(),
+        ))
     }
 
     /// Compute 4x4 transform matrices for all robot links

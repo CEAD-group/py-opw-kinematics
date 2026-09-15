@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+
 import numpy as np
 import numpy.typing as npt
 
@@ -10,8 +10,8 @@ class KinematicModel:
     c2: float
     c3: float
     c4: float
-    offsets: Tuple[float, float, float, float, float, float]
-    flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]]
+    offsets: tuple[float, float, float, float, float, float]
+    flip_axes: tuple[bool, bool, bool, bool, bool, bool] | None
 
     def __init__(
         self,
@@ -22,8 +22,8 @@ class KinematicModel:
         c2: float = 0,
         c3: float = 0,
         c4: float = 0,
-        offsets: Tuple[float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        flip_axes: Optional[Tuple[bool, bool, bool, bool, bool, bool]] = (False, False, False, False, False, False),
+        offsets: tuple[float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        flip_axes: tuple[bool, bool, bool, bool, bool, bool] | None = (False, False, False, False, False, False),
     ) -> None:
         """
         Initialize a KinematicModel instance.
@@ -32,7 +32,6 @@ class KinematicModel:
         :param offsets: Joint offsets.
         :param flip_axes: Boolean flags for flipping axes.
         """
-        ...
 
 class Robot:
     def __init__(
@@ -46,14 +45,12 @@ class Robot:
         :param kinematic_model: The kinematic model of the robot.
         :param degrees: Whether joint angles are in degrees (True) or radians (False).
         """
-        ...
 
-    def __repr__(self) -> str: ...
 
     def forward(
         self,
-        joints: Tuple[float, float, float, float, float, float],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+        joints: tuple[float, float, float, float, float, float],
+        ee_transform: npt.NDArray[np.float64] | None = None,
     ) -> npt.NDArray[np.float64]:
         """
         Compute forward kinematics for given joint angles.
@@ -62,14 +59,13 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: 4x4 transformation matrix.
         """
-        ...
 
     def inverse(
         self,
         pose: npt.NDArray[np.float64],
-        current_joints: Optional[Tuple[float, float, float, float, float, float]] = None,
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
-    ) -> List[Tuple[float, float, float, float, float, float]]:
+        current_joints: tuple[float, float, float, float, float, float] | None = None,
+        ee_transform: npt.NDArray[np.float64] | None = None,
+    ) -> list[tuple[float, float, float, float, float, float]]:
         """
         Compute inverse kinematics for a given pose.
 
@@ -78,13 +74,12 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: List of possible joint configurations.
         """
-        ...
 
     def batch_inverse(
         self,
         poses: npt.NDArray[np.float64],
-        current_joints: Optional[Tuple[float, float, float, float, float, float]] = None,
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+        current_joints: tuple[float, float, float, float, float, float] | None = None,
+        ee_transform: npt.NDArray[np.float64] | None = None,
     ) -> npt.NDArray[np.float64]:
         """
         Compute inverse kinematics for multiple poses.
@@ -94,12 +89,33 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: NumPy array of shape (n, 6) with joint angles.
         """
-        ...
+
+    def reach(
+        self,
+        poses: npt.NDArray[np.float64],
+        joint_limits: list[tuple[float, float]] | None = None,
+        ee_transform: npt.NDArray[np.float64] | None = None,
+    ) -> tuple[
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+    ]:
+        """
+        Compute all eight inverse-kinematics branches for multiple poses.
+
+        :param poses: NumPy array of shape (n, 16) with flattened 4x4 matrices.
+        :param joint_limits: Six (lower, upper) pairs in the robot's angle unit (optional).
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
+        :return: Tuple of (joints (n, 8, 6), limit_margin (n, 8), extension (n,),
+            sigma_min (n, 8), wrist (n, 8)).
+        """
 
     def batch_forward(
         self,
         joints: npt.NDArray[np.float64],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+        ee_transform: npt.NDArray[np.float64] | None = None,
     ) -> npt.NDArray[np.float64]:
         """
         Compute forward kinematics for multiple joint configurations.
@@ -108,13 +124,12 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: NumPy array of shape (n, 16) with flattened 4x4 matrices.
         """
-        ...
 
     def joint_poses(
         self,
-        joints: Tuple[float, float, float, float, float, float],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
-    ) -> List[npt.NDArray[np.float64]]:
+        joints: tuple[float, float, float, float, float, float],
+        ee_transform: npt.NDArray[np.float64] | None = None,
+    ) -> list[npt.NDArray[np.float64]]:
         """
         Compute per-joint poses using the OPW FK chain (consistent with forward()).
 
@@ -123,12 +138,11 @@ class Robot:
         :return: List of 4x4 transformation matrices for [J1, J2, J3, J4, J5, J6/TCP].
             When ee_transform is given, a 7th TCP+EE pose is appended.
         """
-        ...
 
     def batch_joint_poses(
         self,
         joints: npt.NDArray[np.float64],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+        ee_transform: npt.NDArray[np.float64] | None = None,
     ) -> npt.NDArray[np.float64]:
         """
         Compute per-joint poses for multiple joint configurations.
@@ -137,13 +151,12 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: NumPy array of shape (n*6, 16) or (n*7, 16) with flattened 4x4 matrices.
         """
-        ...
 
     def forward_frames(
         self,
-        joints: Tuple[float, float, float, float, float, float],
-        ee_transform: Optional[npt.NDArray[np.float64]] = None,
-    ) -> List[npt.NDArray[np.float64]]:
+        joints: tuple[float, float, float, float, float, float],
+        ee_transform: npt.NDArray[np.float64] | None = None,
+    ) -> list[npt.NDArray[np.float64]]:
         """
         Compute 4x4 transform matrices for all robot links.
 
@@ -151,6 +164,5 @@ class Robot:
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: List of 4x4 transformation matrices for [Base, J1, J2, J3, J4, J5, J6, TCP].
         """
-        ...
 
-__all__: List[str] = ["KinematicModel", "Robot"]
+__all__: list[str] = ["KinematicModel", "Robot"]

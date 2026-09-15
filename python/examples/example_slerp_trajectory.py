@@ -9,9 +9,8 @@ This example demonstrates:
 """
 
 import numpy as np
-from scipy.spatial.transform import Rotation, RigidTransform, Slerp
-
 from py_opw_kinematics import KinematicModel, Robot, interpolate_poses
+from scipy.spatial.transform import RigidTransform, Rotation, Slerp
 
 # %%
 # Create robot with Comau NJ165 parameters

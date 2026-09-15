@@ -6,10 +6,11 @@ This does a brute-force search to find the correct sign values for the kinematic
 model parameters that match known joint positions and expected end-effector poses.
 """
 
-from py_opw_kinematics import Robot, KinematicModel
-from scipy.spatial.transform import RigidTransform, Rotation
-import numpy as np
 import itertools
+
+import numpy as np
+from py_opw_kinematics import KinematicModel, Robot
+from scipy.spatial.transform import RigidTransform, Rotation
 
 
 def find_correct_configuration(observations, model: KinematicModel, degrees: bool):
@@ -172,5 +173,5 @@ if __name__ == "__main__":
 
     print(f"\nFound {len(results)} matching configurations:")
     for robot, ee_angles in results:
-        print(f"\nRobot: {repr(robot)}")
+        print(f"\nRobot: {robot!r}")
         print(f"EE rotation (XYZ): {ee_angles}")
