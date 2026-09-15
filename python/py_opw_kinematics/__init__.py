@@ -5,6 +5,7 @@ Rotation handling is delegated to scipy.spatial.transform.Rotation for flexibili
 This library focuses on pure kinematics with 4x4 transformation matrices.
 """
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
@@ -21,6 +22,42 @@ if TYPE_CHECKING:
     NumpyOrDataFrame = Union[np.ndarray, "pd.DataFrame", "pl.DataFrame"]
 
 _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
+
+
+@dataclass(frozen=True)
+class ReachResult:
+    """
+    All eight inverse-kinematics branches for each pose, with per-branch margins.
+
+    Branch slots are stable: slot ``s = 4 * wrist_flip + 2 * shoulder + elbow``,
+    where the sign choices are taken on the raw OPW angles (before offsets and
+    flip_axes): elbow 0 has ``theta3 = +acos(..) - psi3``, elbow 1 the negative
+    root; shoulder 0 has ``theta1 = atan2(cy, cx) - atan2(b, ..)``, shoulder 1
+    the arm reaching back (``theta1 + pi``); wrist_flip 0 has ``theta5 >= 0``,
+    wrist_flip 1 ``theta5 <= 0``. This is the order rs-opw-kinematics builds
+    its candidates in.
+
+    :ivar joints: (n, 8, 6) joint angles in the robot's angle unit. A NaN row
+        means the branch does not exist for that pose (wrist centre outside the
+        reachable annulus or a complex root). Limits are never applied.
+    :ivar limit_margin: (n, 8) ``min(q - lo, hi - q)`` over all joints, in the
+        robot's angle unit. Negative means outside the limits. ``+inf`` when
+        no limits were given, NaN where the branch does not exist.
+    :ivar extension: (n,) signed distance of the wrist centre to the annulus
+        reachable by the front-shoulder branches, in the model's length unit.
+        Positive inside, zero on the reach boundary, negative outside.
+    :ivar sigma_min: (n, 8) smallest singular value of the 6x6 geometric
+        Jacobian of the requested TCP with respect to the joints in radians.
+        Translation rows are in the model's length unit per radian, rotation
+        rows in radians per radian. Zero at a singularity.
+    :ivar wrist: (n, 8) ``|sin(theta5)|``; zero at the wrist singularity.
+    """
+
+    joints: np.ndarray
+    limit_margin: np.ndarray
+    extension: np.ndarray
+    sigma_min: np.ndarray
+    wrist: np.ndarray
 
 
 class Robot:
@@ -229,6 +266,45 @@ class Robot:
 
         return output_type(result_array, **output_kwargs) if output_type else result_array  # type: ignore[misc,arg-type,call-overload]
 
+    def reach(
+        self,
+        poses: RigidTransform,
+        joint_limits: Optional[ArrayLike] = None,
+        ee_transform: Optional["RigidTransform"] = None,
+    ) -> ReachResult:
+        """
+        Compute all eight inverse-kinematics branches for multiple poses.
+
+        Unlike :meth:`batch_inverse` there is no continuity selection, no limit
+        filtering and no sorting: every branch that exists is returned in a
+        stable slot, and ``limit_margin`` reports how far inside (or outside)
+        the joint limits it is. See :class:`ReachResult` for the slot order.
+
+        :param poses: RigidTransform containing N poses.
+        :param joint_limits: (6, 2) lower/upper joint bounds in the robot's
+            angle unit (optional). Without limits every margin is ``+inf``.
+        :param ee_transform: End effector transformation (optional).
+        :return: ReachResult with per-pose, per-branch arrays.
+        """
+        matrix_array = np.ascontiguousarray(poses.as_matrix().reshape(-1, 16), dtype=np.float64)
+        limits = None
+        if joint_limits is not None:
+            limits_array = np.asarray(joint_limits, dtype=np.float64)
+            if limits_array.shape != (6, 2):
+                raise ValueError("joint_limits must have shape (6, 2)")
+            limits = [tuple(row) for row in limits_array]
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        joints, limit_margin, extension, sigma_min, wrist = self._robot.reach(
+            matrix_array, limits, ee_matrix
+        )
+        return ReachResult(
+            joints=joints,
+            limit_margin=limit_margin,
+            extension=extension,
+            sigma_min=sigma_min,
+            wrist=wrist,
+        )
+
 
 def interpolate_poses(
     x: ArrayLike,
@@ -266,6 +342,7 @@ def interpolate_poses(
 
 __all__ = [
     "KinematicModel",
+    "ReachResult",
     "Robot",
     "RigidTransform",
     "interpolate_poses",

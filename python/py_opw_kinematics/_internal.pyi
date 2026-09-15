@@ -96,6 +96,29 @@ class Robot:
         """
         ...
 
+    def reach(
+        self,
+        poses: npt.NDArray[np.float64],
+        joint_limits: Optional[List[Tuple[float, float]]] = None,
+        ee_transform: Optional[npt.NDArray[np.float64]] = None,
+    ) -> Tuple[
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+    ]:
+        """
+        Compute all eight inverse-kinematics branches for multiple poses.
+
+        :param poses: NumPy array of shape (n, 16) with flattened 4x4 matrices.
+        :param joint_limits: Six (lower, upper) pairs in the robot's angle unit (optional).
+        :param ee_transform: End effector transformation matrix (4x4) (optional).
+        :return: Tuple of (joints (n, 8, 6), limit_margin (n, 8), extension (n,),
+            sigma_min (n, 8), wrist (n, 8)).
+        """
+        ...
+
     def batch_forward(
         self,
         joints: npt.NDArray[np.float64],

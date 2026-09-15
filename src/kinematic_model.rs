@@ -19,8 +19,12 @@ pub struct KinematicModel {
 
 impl KinematicModel {
     pub fn to_opw_kinematics(&self, degrees: bool) -> OPWKinematics {
+        OPWKinematics::new(self.to_parameters(degrees))
+    }
+
+    pub fn to_parameters(&self, degrees: bool) -> Parameters {
         let sign_corrections = self.flip_axes.map(|x| if x { -1 } else { 1 });
-        OPWKinematics::new(Parameters {
+        Parameters {
             a1: self.a1,
             a2: self.a2,
             b: self.b,
@@ -40,7 +44,7 @@ impl KinematicModel {
             },
             sign_corrections,
             dof: 6,
-        })
+        }
     }
 }
 

@@ -73,3 +73,6 @@ docs/_build/
 
 # Claude Code
 .claude/
+
+# Local scratch files
+tmp/
