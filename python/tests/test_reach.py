@@ -179,6 +179,41 @@ def test_extension_margin(robot: Robot):
     assert np.allclose(step, step[0], atol=1e-12)
 
 
+def test_extension_back_shoulder(robot: Robot):
+    # Reachable only through the back-shoulder branches: extension must not be negative.
+    pose = RigidTransform.from_components(
+        rotation=robot.forward(_j(HOME)).rotation, translation=[-0.45, 0.0, 0.80]
+    )
+    result = robot.reach(pose)
+    exists = ~np.isnan(result.joints[0, :, 0])
+    assert exists[[2, 3, 6, 7]].any() and not exists[[0, 1, 4, 5]].any()
+    assert result.extension[0] >= 0
+
+
+def test_wrist_centre_inside_b_cylinder():
+    model = KinematicModel(
+        a1=0.400, a2=-0.250, b=0.15, c1=0.830, c2=1.175, c3=1.444, c4=0.230,
+        offsets=(0, 0, 0, 0, 0, 0), flip_axes=(True, False, True, True, False, True),
+    )
+    robot = Robot(model, degrees=True)
+    # Wrist centre on the J1 axis, well inside the |b| cylinder.
+    pose = RigidTransform.from_components(
+        rotation=Rotation.identity(), translation=[0.0, 0.0, 2.0 + 0.230]
+    )
+    result = robot.reach(pose)
+    assert np.isfinite(result.extension[0])
+    assert result.extension[0] < 0
+    assert np.all(np.isnan(result.joints[0]))
+
+
+def test_reach_result_equality_does_not_raise(robot: Robot):
+    a = robot.reach(robot.forward(_j(HOME)))
+    b = robot.reach(robot.forward(_j(HOME)))
+    assert a.__eq__(b) is False
+    assert a != b
+    hash(a)
+
+
 def _numeric_jacobian(robot: Robot, q: np.ndarray, h_deg: float = 1e-4) -> np.ndarray:
     # Columns: d(p, rotvec-ish)/d(q_rad) from forward differences via batch_forward.
     jac = np.zeros((6, 6))

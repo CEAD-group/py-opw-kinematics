@@ -55,7 +55,11 @@ pub fn all_branches(params: &Parameters, pose: &Isometry3<f64>) -> ([[f64; 6]; 8
     let matrix = pose.rotation.to_rotation_matrix();
     let c = pose.translation.vector - params.c4 * matrix.transform_vector(&Vector3::z_axis());
 
-    let nx1 = ((c.x * c.x + c.y * c.y) - params.b * params.b).sqrt() - params.a1;
+    // Clamped so a wrist centre inside the |b| cylinder still yields a finite extension.
+    let nx1 = ((c.x * c.x + c.y * c.y) - params.b * params.b)
+        .max(0.0)
+        .sqrt()
+        - params.a1;
 
     let tmp1 = c.y.atan2(c.x);
     let tmp2 = params.b.atan2(nx1 + params.a1);
@@ -73,9 +77,16 @@ pub fn all_branches(params: &Parameters, pose: &Isometry3<f64>) -> ([[f64; 6]; 8
     let s1 = s1_2.sqrt();
     let s2 = s2_2.sqrt();
 
-    // Signed distance of the wrist centre to the annulus |c2 - L| <= d <= c2 + L
-    // that the front-shoulder branches can reach.
-    let extension = (params.c2 + kappa - s1).min(s1 - (params.c2 - kappa).abs());
+    // Signed distance of the wrist centre to the annulus |c2 - L| <= d <= c2 + L,
+    // taken over both shoulder configurations so it is negative only when no branch exists.
+    let annulus = |d: f64| (params.c2 + kappa - d).min(d - (params.c2 - kappa).abs());
+    let radius_xy = (c.x * c.x + c.y * c.y).sqrt();
+    let extension = if radius_xy < params.b.abs() {
+        // Inside the |b| cylinder no branch exists; report the distance to it.
+        radius_xy - params.b.abs()
+    } else {
+        annulus(s1).max(annulus(s2))
+    };
 
     let tmp13 = ((s1_2 + c2_2 - kappa_2) / (2.0 * s1 * params.c2)).acos();
     let tmp14 = nx1.atan2(tmp3);

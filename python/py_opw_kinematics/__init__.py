@@ -23,7 +23,8 @@ if TYPE_CHECKING:
 _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 
 
-@dataclass(frozen=True)
+# eq=False: the generated __eq__ and __hash__ do not work on ndarray fields.
+@dataclass(frozen=True, eq=False)
 class ReachResult:
     """
     All eight inverse-kinematics branches for each pose, with per-branch margins.
@@ -41,10 +42,16 @@ class ReachResult:
         reachable annulus or a complex root). Limits are never applied.
     :ivar limit_margin: (n, 8) ``min(q - lo, hi - q)`` over all joints, in the
         robot's angle unit. Negative means outside the limits. ``+inf`` when
-        no limits were given, NaN where the branch does not exist.
+        no limits were given, NaN where the branch does not exist. Joints are
+        normalised to (-180, 180] degrees before the comparison, so a limit
+        window that is not contained in one turn (for example 0..360) is
+        evaluated against the wrapped angle.
     :ivar extension: (n,) signed distance of the wrist centre to the annulus
-        reachable by the front-shoulder branches, in the model's length unit.
-        Positive inside, zero on the reach boundary, negative outside.
+        reachable by the shoulder, in the model's length unit, taken over both
+        the front and back shoulder configurations. Positive inside, zero on
+        the reach boundary, negative when no branch can exist. For a wrist
+        centre closer than ``|b|`` to the J1 axis it is the negative distance
+        to that cylinder instead.
     :ivar sigma_min: (n, 8) smallest singular value of the 6x6 geometric
         Jacobian of the requested TCP with respect to the joints in radians.
         Translation rows are in the model's length unit per radian, rotation
