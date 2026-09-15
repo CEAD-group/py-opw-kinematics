@@ -209,7 +209,7 @@ def test_wrist_centre_inside_b_cylinder():
 def test_reach_result_equality_does_not_raise(robot: Robot):
     a = robot.reach(robot.forward(_j(HOME)))
     b = robot.reach(robot.forward(_j(HOME)))
-    assert a.__eq__(b) is False
+    assert bool(a == b) is False
     assert a != b
     hash(a)
 
