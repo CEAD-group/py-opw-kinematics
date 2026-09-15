@@ -6,20 +6,19 @@ This library focuses on pure kinematics with 4x4 transformation matrices.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.spatial.transform import RigidTransform
 
 from ._internal import KinematicModel
 from ._internal import Robot as _RobotInternal
 
-from scipy.spatial.transform import RigidTransform
-
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore[import-untyped]
     import polars as pl
-    NumpyOrDataFrame = Union[np.ndarray, "pd.DataFrame", "pl.DataFrame"]
+    NumpyOrDataFrame = np.ndarray | pd.DataFrame | pl.DataFrame
 
 _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 
@@ -93,7 +92,7 @@ class Robot:
 
     def forward(
         self,
-        joints: Tuple[float, float, float, float, float, float],
+        joints: tuple[float, float, float, float, float, float],
         ee_transform: Optional["RigidTransform"] = None,
     ) -> "RigidTransform":
         """
@@ -110,9 +109,9 @@ class Robot:
     def inverse(
         self,
         pose: "RigidTransform",
-        current_joints: Optional[Tuple[float, float, float, float, float, float]] = None,
+        current_joints: tuple[float, float, float, float, float, float] | None = None,
         ee_transform: Optional["RigidTransform"] = None,
-    ) -> List[Tuple[float, float, float, float, float, float]]:
+    ) -> list[tuple[float, float, float, float, float, float]]:
         """
         Compute inverse kinematics for a given pose.
 
@@ -127,7 +126,7 @@ class Robot:
 
     def joint_poses(
         self,
-        joints: Tuple[float, float, float, float, float, float],
+        joints: tuple[float, float, float, float, float, float],
         ee_transform: Optional["RigidTransform"] = None,
     ) -> RigidTransform:
         """
@@ -172,7 +171,7 @@ class Robot:
 
     def forward_frames(
         self,
-        joints: Tuple[float, float, float, float, float, float],
+        joints: tuple[float, float, float, float, float, float],
         ee_transform: Optional["RigidTransform"] = None,
     ) -> RigidTransform:
         """
@@ -227,7 +226,7 @@ class Robot:
     def batch_inverse(
         self,
         poses: RigidTransform,
-        current_joints: "Optional[NumpyOrDataFrame | Tuple[float, float, float, float, float, float]]" = None,
+        current_joints: "NumpyOrDataFrame | tuple[float, float, float, float, float, float] | None" = None,
         ee_transform: Optional["RigidTransform"] = None,
     ) -> "NumpyOrDataFrame":
         """
@@ -269,7 +268,7 @@ class Robot:
     def reach(
         self,
         poses: RigidTransform,
-        joint_limits: Optional[ArrayLike] = None,
+        joint_limits: ArrayLike | None = None,
         ee_transform: Optional["RigidTransform"] = None,
     ) -> ReachResult:
         """
@@ -343,7 +342,7 @@ def interpolate_poses(
 __all__ = [
     "KinematicModel",
     "ReachResult",
-    "Robot",
     "RigidTransform",
+    "Robot",
     "interpolate_poses",
 ]

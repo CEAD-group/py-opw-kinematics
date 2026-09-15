@@ -1,6 +1,6 @@
-from py_opw_kinematics import Robot, KinematicModel
 import numpy as np
 import pytest
+from py_opw_kinematics import KinematicModel, Robot
 from scipy.spatial.transform import RigidTransform, Rotation
 
 
@@ -290,8 +290,8 @@ def test_batch_roundtrip(example_robot: Robot):
 
 def test_batch_inverse_current_joints_signatures(example_robot: Robot):
     """Test batch_inverse with various current_joints input types."""
-    import polars as pl
     import pandas as pd
+    import polars as pl
 
     robot = example_robot
     ee_transform = RigidTransform.from_components(

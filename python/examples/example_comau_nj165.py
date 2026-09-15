@@ -4,9 +4,8 @@ Example: Basic forward and inverse kinematics with Comau NJ165 robot parameters
 """
 
 import numpy as np
-from scipy.spatial.transform import RigidTransform, Rotation
-
 from py_opw_kinematics import KinematicModel, Robot
+from scipy.spatial.transform import RigidTransform, Rotation
 
 # %%
 # Define robot geometry (Comau NJ165 parameters)
