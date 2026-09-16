@@ -279,6 +279,7 @@ class Robot:
         poses: RigidTransform,
         joint_limits: ArrayLike | None = None,
         ee_transform: Optional["RigidTransform"] = None,
+        threads: int = 1,
     ) -> ReachResult:
         """
         Compute all eight inverse-kinematics branches for multiple poses.
@@ -293,8 +294,15 @@ class Robot:
             angle unit (optional). Without limits every margin is ``+inf``.
             With limits, ``sigma_min`` is left NaN for branches outside them.
         :param ee_transform: End effector transformation (optional).
+        :param threads: Worker threads for the per-pose loop. The default 1 runs
+            in the calling thread; 0 uses one per available core. The GIL is
+            released either way, so a caller that already parallelises can keep
+            ``threads=1`` and chunk the poses itself. The pool is built per call,
+            so threading a small batch costs more than it saves.
         :return: ReachResult with per-pose, per-branch arrays.
         """
+        if threads < 0:
+            raise ValueError("threads must be >= 0")
         matrix_array = np.ascontiguousarray(poses.as_matrix().reshape(-1, 16), dtype=np.float64)
         limits = None
         if joint_limits is not None:
@@ -304,7 +312,7 @@ class Robot:
             limits = [tuple(row) for row in limits_array]
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         joints, limit_margin, extension, sigma_min, wrist = self._robot.reach(
-            matrix_array, limits, ee_matrix
+            matrix_array, limits, ee_matrix, threads
         )
         return ReachResult(
             joints=joints,

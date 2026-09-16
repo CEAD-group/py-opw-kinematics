@@ -358,3 +358,51 @@ def test_sigma_min_skipped_outside_limits(robot: Robot):
     inside = limited.limit_margin[0] >= 0
     assert np.any(inside)
     assert np.array_equal(limited.sigma_min[0, inside], unlimited.sigma_min[0, inside])
+
+
+@pytest.mark.parametrize("threads", [0, 2, 4])
+def test_threads_give_identical_results(robot: Robot, threads: int):
+    samples = _grid_joints()[::3]
+    poses = robot.batch_forward(samples)
+    single = robot.reach(poses, NJ165_LIMITS)
+    threaded = robot.reach(poses, NJ165_LIMITS, threads=threads)
+    for name in ("joints", "limit_margin", "extension", "sigma_min", "wrist"):
+        assert np.array_equal(getattr(single, name), getattr(threaded, name), equal_nan=True)
+
+
+def test_threads_release_the_gil(robot: Robot):
+    # A second Python thread must keep running while reach is in the kernel.
+    import threading
+    import time
+
+    samples = _grid_joints()
+    poses = robot.batch_forward(samples)
+    ticks = 0
+    done = threading.Event()
+
+    def spin():
+        nonlocal ticks
+        while not done.is_set():
+            ticks += 1
+            time.sleep(0.001)
+
+    spinner = threading.Thread(target=spin)
+    spinner.start()
+    try:
+        while ticks == 0:
+            time.sleep(0.001)
+        before = ticks
+        t0 = time.perf_counter()
+        robot.reach(poses, NJ165_LIMITS)
+        elapsed = time.perf_counter() - t0
+    finally:
+        done.set()
+        spinner.join()
+    # The spinner sleeps 1 ms per tick, so a GIL-holding kernel would stall it.
+    assert elapsed > 0.02, "kernel too fast to tell; use a larger grid"
+    assert ticks - before > 5
+
+
+def test_negative_threads_rejected(robot: Robot):
+    with pytest.raises(ValueError):
+        robot.reach(robot.forward(_j(HOME)), threads=-1)

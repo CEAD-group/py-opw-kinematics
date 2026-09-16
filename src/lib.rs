@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use numpy::ndarray::{Array1, Array2, Array3};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
+use rayon::prelude::*;
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
 
@@ -389,14 +390,17 @@ impl Robot {
     /// Branch slot s = 4 * wrist_flip + 2 * shoulder + elbow; NaN means the branch does not exist.
     /// sigma_min is NaN for branches with a negative limit_margin: those are unusable, so the
     /// Jacobian is not evaluated for them.
+    /// threads: worker threads for the per-pose loop, 0 for one per available core. The GIL is
+    /// released while the loop runs, so callers can thread over chunks themselves.
     /// No continuity selection, limit filtering or sorting is applied.
-    #[pyo3(signature = (poses, joint_limits=None, ee_transform=None))]
+    #[pyo3(signature = (poses, joint_limits=None, ee_transform=None, threads=1))]
     fn reach<'py>(
         &self,
         py: Python<'py>,
         poses: PyReadonlyArray2<'py, f64>,
         joint_limits: Option<[[f64; 2]; 6]>,
         ee_transform: Option<[[f64; 4]; 4]>,
+        threads: usize,
     ) -> PyResult<ReachArrays> {
         let poses_array = poses.as_array();
         if poses_array.ncols() != 16 {
@@ -432,47 +436,96 @@ impl Robot {
         });
         let scale = if self.degrees { 180.0 / std::f64::consts::PI } else { 1.0 };
 
-        let mut joints: Vec<f64> = Vec::with_capacity(n * 48);
-        let mut margins: Vec<f64> = Vec::with_capacity(n * 8);
-        let mut extension: Vec<f64> = Vec::with_capacity(n);
-        let mut sigma: Vec<f64> = Vec::with_capacity(n * 8);
-        let mut wrist: Vec<f64> = Vec::with_capacity(n * 8);
+        // The input is copied so the loop can run without the GIL: at 0.009 us/pose it is
+        // far cheaper than holding the GIL, and it removes any aliasing with Python writers.
+        let rows: Vec<f64> = poses_array.iter().copied().collect();
 
-        for i in 0..n {
-            let row = poses_array.row(i);
+        let mut joints = vec![0.0f64; n * 48];
+        let mut margins = vec![0.0f64; n * 8];
+        let mut extension = vec![0.0f64; n];
+        let mut sigma = vec![0.0f64; n * 8];
+        let mut wrist = vec![0.0f64; n * 8];
 
-            let result = if row.iter().any(|v| v.is_nan()) {
-                reach::PoseReach::nan()
-            } else {
-                let values: [f64; 16] = std::array::from_fn(|k| row[k]);
-                let target = nalgebra::Matrix4::from_row_slice(&values);
-                let target_rotation: nalgebra::Matrix3<f64> = target.fixed_view::<3, 3>(0, 0).into();
-                let target_translation: Vector3<f64> = target.fixed_view::<3, 1>(0, 3).into();
-                let flange_rotation = target_rotation * ee_rotation_inv;
-                let flange_translation = target_translation - target_rotation * ee_translation;
-                let flange = Isometry3::from_parts(
-                    Translation3::from(flange_translation),
-                    nalgebra::UnitQuaternion::from_rotation_matrix(
-                        &Rotation3::from_matrix_unchecked(flange_rotation),
-                    ),
-                );
-                reach::reach_pose(
-                    &self.robot,
-                    &self.parameters,
-                    &flange,
-                    &ee_offset_in_flange,
-                    limits_rad.as_ref(),
-                )
-            };
-
-            for s in 0..8 {
-                joints.extend(result.joints[s].iter().map(|a| a * scale));
-                margins.push(result.limit_margin[s] * scale);
+        let pose_at = |i: usize| -> reach::PoseReach {
+            let row = &rows[i * 16..(i + 1) * 16];
+            if row.iter().any(|v| v.is_nan()) {
+                return reach::PoseReach::nan();
             }
-            extension.push(result.extension);
-            sigma.extend_from_slice(&result.sigma_min);
-            wrist.extend_from_slice(&result.wrist);
-        }
+            let target = nalgebra::Matrix4::from_row_slice(row);
+            let target_rotation: nalgebra::Matrix3<f64> = target.fixed_view::<3, 3>(0, 0).into();
+            let target_translation: Vector3<f64> = target.fixed_view::<3, 1>(0, 3).into();
+            let flange_rotation = target_rotation * ee_rotation_inv;
+            let flange_translation = target_translation - target_rotation * ee_translation;
+            let flange = Isometry3::from_parts(
+                Translation3::from(flange_translation),
+                nalgebra::UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(
+                    flange_rotation,
+                )),
+            );
+            reach::reach_pose(
+                &self.robot,
+                &self.parameters,
+                &flange,
+                &ee_offset_in_flange,
+                limits_rad.as_ref(),
+            )
+        };
+
+        let write = |i: usize,
+                     out_joints: &mut [f64],
+                     out_margins: &mut [f64],
+                     out_sigma: &mut [f64],
+                     out_wrist: &mut [f64],
+                     out_extension: &mut f64| {
+            let result = pose_at(i);
+            for s in 0..8 {
+                for j in 0..6 {
+                    out_joints[s * 6 + j] = result.joints[s][j] * scale;
+                }
+                out_margins[s] = result.limit_margin[s] * scale;
+            }
+            out_sigma.copy_from_slice(&result.sigma_min);
+            out_wrist.copy_from_slice(&result.wrist);
+            *out_extension = result.extension;
+        };
+
+        py.detach(|| {
+            let mut sequential = || {
+                joints
+                    .chunks_mut(48)
+                    .zip(margins.chunks_mut(8))
+                    .zip(sigma.chunks_mut(8))
+                    .zip(wrist.chunks_mut(8))
+                    .zip(extension.iter_mut())
+                    .enumerate()
+                    .for_each(|(i, ((((j, m), s), w), e))| write(i, j, m, s, w, e));
+            };
+            if threads == 1 {
+                sequential();
+                return Ok(());
+            }
+            let mut parallel = || {
+                joints
+                    .par_chunks_mut(48)
+                    .zip(margins.par_chunks_mut(8))
+                    .zip(sigma.par_chunks_mut(8))
+                    .zip(wrist.par_chunks_mut(8))
+                    .zip(extension.par_iter_mut())
+                    .enumerate()
+                    .for_each(|(i, ((((j, m), s), w), e))| write(i, j, m, s, w, e));
+            };
+            if threads == 0 {
+                parallel();
+                return Ok(());
+            }
+            // A pool per call rather than the global one, so the thread count is honoured
+            // per call and the caller's own rayon configuration is left alone.
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map(|pool| pool.install(parallel))
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{}", e)))
+        })?;
 
         let err = |e: numpy::ndarray::ShapeError| pyo3::exceptions::PyValueError::new_err(format!("{}", e));
         Ok((
