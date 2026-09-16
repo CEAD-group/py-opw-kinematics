@@ -55,7 +55,9 @@ class ReachResult:
     :ivar sigma_min: (n, 8) smallest singular value of the 6x6 geometric
         Jacobian of the requested TCP with respect to the joints in radians.
         Translation rows are in the model's length unit per radian, rotation
-        rows in radians per radian. Zero at a singularity.
+        rows in radians per radian. Zero at a singularity. NaN where the branch
+        does not exist and where ``limit_margin`` is negative, since the
+        conditioning of an unusable branch is not computed.
     :ivar wrist: (n, 8) ``|sin(theta5)|``; zero at the wrist singularity.
     """
 
@@ -289,6 +291,7 @@ class Robot:
         :param poses: RigidTransform containing N poses.
         :param joint_limits: (6, 2) lower/upper joint bounds in the robot's
             angle unit (optional). Without limits every margin is ``+inf``.
+            With limits, ``sigma_min`` is left NaN for branches outside them.
         :param ee_transform: End effector transformation (optional).
         :return: ReachResult with per-pose, per-branch arrays.
         """

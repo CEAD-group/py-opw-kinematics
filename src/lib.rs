@@ -387,6 +387,8 @@ impl Robot {
     /// joint_limits: optional (6, 2) lower/upper bounds in the robot's angle unit
     /// Returns: (joints (n, 8, 6), limit_margin (n, 8), extension (n,), sigma_min (n, 8), wrist (n, 8))
     /// Branch slot s = 4 * wrist_flip + 2 * shoulder + elbow; NaN means the branch does not exist.
+    /// sigma_min is NaN for branches with a negative limit_margin: those are unusable, so the
+    /// Jacobian is not evaluated for them.
     /// No continuity selection, limit filtering or sorting is applied.
     #[pyo3(signature = (poses, joint_limits=None, ee_transform=None))]
     fn reach<'py>(
@@ -454,22 +456,18 @@ impl Robot {
                         &Rotation3::from_matrix_unchecked(flange_rotation),
                     ),
                 );
-                reach::reach_pose(&self.robot, &self.parameters, &flange, &ee_offset_in_flange)
+                reach::reach_pose(
+                    &self.robot,
+                    &self.parameters,
+                    &flange,
+                    &ee_offset_in_flange,
+                    limits_rad.as_ref(),
+                )
             };
 
             for s in 0..8 {
-                let q = result.joints[s];
-                let margin = if q[0].is_nan() {
-                    f64::NAN
-                } else if let Some(lim) = limits_rad {
-                    (0..6)
-                        .map(|j| (q[j] - lim[j][0]).min(lim[j][1] - q[j]))
-                        .fold(f64::INFINITY, f64::min)
-                } else {
-                    f64::INFINITY
-                };
-                joints.extend(q.iter().map(|a| a * scale));
-                margins.push(margin * scale);
+                joints.extend(result.joints[s].iter().map(|a| a * scale));
+                margins.push(result.limit_margin[s] * scale);
             }
             extension.push(result.extension);
             sigma.extend_from_slice(&result.sigma_min);
