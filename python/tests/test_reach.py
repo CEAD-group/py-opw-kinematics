@@ -340,3 +340,21 @@ def test_radians_robot():
 def test_joint_limits_shape_validation(robot: Robot):
     with pytest.raises(ValueError):
         robot.reach(robot.forward(_j(HOME)), np.zeros((5, 2)))
+
+
+def test_sigma_min_skipped_outside_limits(robot: Robot):
+    q = np.array([10.0, 20.0, -70.0, 30.0, 40.0, 10.0])
+    tight = NJ165_LIMITS.copy()
+    # Keeps the front-shoulder branches only; the back-shoulder ones need J1 near 180.
+    tight[0] = (-30, 30)
+    pose = robot.forward(_j(q))
+    limited = robot.reach(pose, tight)
+    unlimited = robot.reach(pose)
+
+    outside = limited.limit_margin[0] < 0
+    assert np.any(outside)
+    assert np.all(np.isnan(limited.sigma_min[0, outside]))
+    # Every usable branch keeps the value it has without limits.
+    inside = limited.limit_margin[0] >= 0
+    assert np.any(inside)
+    assert np.array_equal(limited.sigma_min[0, inside], unlimited.sigma_min[0, inside])

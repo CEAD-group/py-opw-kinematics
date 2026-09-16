@@ -13,13 +13,16 @@ const ANGULAR_TOLERANCE: f64 = 1e-6;
 // Below this |sin(theta5)| the J4/J6 split is taken from the full rotation instead.
 const WRIST_SINGULARITY_SIN: f64 = 1e-8;
 
-/// Per-pose output of the reach kernel. Joints are in radians in the user
-/// (sign-corrected, offset) frame; a NaN row means the branch does not exist.
+/// Per-pose output of the reach kernel. Joints and margins are in radians in
+/// the user (sign-corrected, offset) frame; a NaN row means the branch does
+/// not exist. `sigma_min` is NaN where the branch is outside the joint limits,
+/// because the conditioning of an unusable branch is never computed.
 pub struct PoseReach {
     pub joints: [[f64; 6]; 8],
     pub extension: f64,
     pub wrist: [f64; 8],
     pub sigma_min: [f64; 8],
+    pub limit_margin: [f64; 8],
 }
 
 impl PoseReach {
@@ -29,6 +32,7 @@ impl PoseReach {
             extension: f64::NAN,
             wrist: [f64::NAN; 8],
             sigma_min: [f64::NAN; 8],
+            limit_margin: [f64::NAN; 8],
         }
     }
 }
@@ -219,14 +223,18 @@ fn sigma_min(params: &Parameters, joint_poses: &[Isometry3<f64>; 6], tcp: &Vecto
 /// Full reach evaluation for one target pose. `flange` is the target with the
 /// end-effector offset removed; `ee_offset` is the TCP position expressed in
 /// the flange frame, used to evaluate the Jacobian at the requested TCP.
+/// `limits` are lower/upper bounds in radians in the user frame; when given,
+/// the Jacobian is skipped for branches outside them.
 pub fn reach_pose(
     robot: &OPWKinematics,
     params: &Parameters,
     flange: &Isometry3<f64>,
     ee_offset: &Vector3<f64>,
+    limits: Option<&[[f64; 2]; 6]>,
 ) -> PoseReach {
     let (mut joints, extension, mut wrist) = all_branches(params, flange);
     let mut sigma = [f64::NAN; 8];
+    let mut limit_margin = [f64::NAN; 8];
 
     for s in 0..8 {
         if joints[s][0].is_nan() {
@@ -241,6 +249,17 @@ pub fn reach_pose(
             wrist[s] = f64::NAN;
             continue;
         }
+        limit_margin[s] = match limits {
+            Some(lim) => (0..6)
+                .map(|j| (joints[s][j] - lim[j][0]).min(lim[j][1] - joints[s][j]))
+                .fold(f64::INFINITY, f64::min),
+            None => f64::INFINITY,
+        };
+        // An out-of-limit branch is unusable downstream, so skip its 6x6 eigen
+        // solve: those solves dominate the kernel cost.
+        if limit_margin[s] < 0.0 {
+            continue;
+        }
         let tcp = flange_check.translation.vector + flange_check.rotation * ee_offset;
         sigma[s] = sigma_min(params, &poses, &tcp);
     }
@@ -250,5 +269,6 @@ pub fn reach_pose(
         extension,
         wrist,
         sigma_min: sigma,
+        limit_margin,
     }
 }

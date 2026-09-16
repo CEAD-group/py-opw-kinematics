@@ -107,6 +107,7 @@ class Robot:
 
         :param poses: NumPy array of shape (n, 16) with flattened 4x4 matrices.
         :param joint_limits: Six (lower, upper) pairs in the robot's angle unit (optional).
+            With limits, sigma_min is NaN for branches outside them.
         :param ee_transform: End effector transformation matrix (4x4) (optional).
         :return: Tuple of (joints (n, 8, 6), limit_margin (n, 8), extension (n,),
             sigma_min (n, 8), wrist (n, 8)).
