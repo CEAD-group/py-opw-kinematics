@@ -1,3 +1,4 @@
+mod frame_poses;
 mod kinematic_model;
 mod reach;
 use crate::kinematic_model::KinematicModel;
@@ -5,8 +6,8 @@ use crate::kinematic_model::KinematicModel;
 use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
 use pyo3::prelude::*;
 
-use numpy::ndarray::{Array1, Array2, Array3};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray2};
+use numpy::ndarray::{Array1, Array2, Array3, Array4};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -384,6 +385,93 @@ impl Robot {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
 
         Ok(result_array.into_pyarray(py).into())
+    }
+
+    /// Selected frames of batch_joint_poses, frame-major.
+    /// Input: joints array of shape (n, 6); frames: K indices into the poses joint_poses
+    /// returns (0..=5 for J1..J6, 6 for J6 with ee_transform, which then must be given).
+    /// Output: (K, n, 3, 4) row-major [R | t], or (K, n, 4, 4) when homogeneous, so each
+    /// frame is one contiguous block. Bit-identical to batch_joint_poses; a row with any
+    /// NaN joint is all NaN. threads: same convention as reach. Only the chain up to the
+    /// deepest selected joint is evaluated.
+    #[pyo3(signature = (joints, frames, ee_transform=None, *, homogeneous=false, threads=None))]
+    fn batch_frame_poses<'py>(
+        &self,
+        py: Python<'py>,
+        joints: PyReadonlyArray2<'py, f64>,
+        frames: Vec<usize>,
+        ee_transform: Option<[[f64; 4]; 4]>,
+        homogeneous: bool,
+        threads: Option<isize>,
+    ) -> PyResult<Py<PyArray4<f64>>> {
+        let workers = Workers::new(py, threads)?;
+        let joints_array = joints.as_array();
+        if joints_array.ncols() != 6 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "joints must have shape (n, 6)",
+            ));
+        }
+        for &frame in &frames {
+            if frame > 6 {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "frame index must be in 0..=6, got {}",
+                    frame
+                )));
+            }
+            if frame == 6 && ee_transform.is_none() {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "frame 6 is the end-effector frame and needs ee_transform",
+                ));
+            }
+        }
+        let ee = ee_transform.map(|ee_matrix| {
+            let flattened: Vec<f64> = ee_matrix.into_iter().flatten().collect();
+            let matrix = nalgebra::Matrix4::from_row_slice(&flattened);
+            let rotation: nalgebra::Matrix3<f64> = matrix.fixed_view::<3, 3>(0, 0).into();
+            let translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            (rotation, translation)
+        });
+        let kernel =
+            frame_poses::FramePoses::new(&self.parameters, self.degrees, frames, ee, homogeneous);
+
+        let n = joints_array.nrows();
+        let k = kernel.count();
+        let stride = kernel.stride();
+        // Copied for the same reason as in reach: the loop then runs without the GIL.
+        let rows: Vec<f64> = joints_array.iter().copied().collect();
+        let mut out = vec![0.0f64; k * n * stride];
+
+        if n > 0 && k > 0 {
+            // Rows are split into runs; each run gets its slice of every frame's block.
+            const RUN: usize = 256;
+            let runs = n.div_ceil(RUN);
+            let mut per_run: Vec<Vec<&mut [f64]>> =
+                (0..runs).map(|_| Vec::with_capacity(k)).collect();
+            for block in out.chunks_mut(n * stride) {
+                for (r, piece) in block.chunks_mut(RUN * stride).enumerate() {
+                    per_run[r].push(piece);
+                }
+            }
+            py.detach(|| {
+                workers.install(runs, || {
+                    per_run
+                        .into_par_iter()
+                        .zip(rows.par_chunks(RUN * 6))
+                        .with_min_len(workers.min_len())
+                        .for_each(|(mut blocks, run)| {
+                            for (i, q) in run.chunks(6).enumerate() {
+                                kernel.eval(q, &mut blocks, i);
+                            }
+                        });
+                })
+            });
+        }
+
+        let side = if homogeneous { 4 } else { 3 };
+        Ok(Array4::from_shape_vec((k, n, side, 4), out)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?
+            .into_pyarray(py)
+            .into())
     }
 
     /// All eight inverse-kinematics branches per pose, with per-branch margins.

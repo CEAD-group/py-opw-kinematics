@@ -6,6 +6,7 @@ This library focuses on pure kinematics with 4x4 transformation matrices.
 """
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -27,6 +28,29 @@ _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 def _is_polars(frame: object) -> bool:
     # pandas 3.1 added DataFrame.select, so duck typing on it misreads a pandas frame.
     return type(frame).__module__.split(".")[0] == "polars"
+
+
+def _threads_arg(threads: int | None) -> int | None:
+    # stacklevel=3 points the warning at the caller of the public method.
+    if threads == 0:
+        warnings.warn(
+            "threads=0 is deprecated, use threads=None for the global pool",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return None
+    return threads
+
+
+def _joint_array(joints: "NumpyOrDataFrame") -> np.ndarray:
+    if hasattr(joints, "to_numpy"):
+        if _is_polars(joints):
+            arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
+        else:
+            arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
+    else:
+        arr = np.asarray(joints)
+    return np.ascontiguousarray(arr, dtype=np.float64)
 
 
 # eq=False: the generated __eq__ and __hash__ do not work on ndarray fields.
@@ -170,19 +194,55 @@ class Robot:
         :return: RigidTransform with N*6 poses (or N*7 when ee_transform is given).
             Reshape to (N, 6, 4, 4) or (N, 7, 4, 4) for per-config access.
         """
-        if hasattr(joints, "to_numpy"):
-            if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
-            else:
-                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
-        else:
-            arr = np.asarray(joints)
-        joints_array = np.ascontiguousarray(arr, dtype=np.float64)
+        joints_array = _joint_array(joints)
 
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_joint_poses(joints_array, ee_matrix)
 
         return RigidTransform.from_matrix(result_array.reshape(-1, 4, 4))
+
+    def batch_frame_poses(
+        self,
+        joints: "NumpyOrDataFrame",
+        frames: Sequence[int],
+        ee_transform: Optional["RigidTransform"] = None,
+        *,
+        homogeneous: bool = False,
+        threads: int | None = None,
+    ) -> np.ndarray:
+        """
+        Selected per-joint frames for many joint rows, as one array per frame.
+
+        Bit-identical to ``batch_joint_poses(joints, ee_transform)`` reshaped
+        to (N, P, 4, 4) and indexed with ``frames``, but evaluated only up to
+        the deepest selected joint, written frame-major, and with the GIL
+        released.
+
+        :param joints: Joint angles as numpy array (N, 6), or DataFrame with
+            columns J1-J6, in the robot's angle unit.
+        :param frames: K indices into the poses :meth:`batch_joint_poses`
+            returns: 0..5 for J1..J6, and 6 for the J6 pose with
+            ``ee_transform`` applied, which then must be given. Repeats are
+            allowed.
+        :param ee_transform: End effector transformation, needed for frame 6.
+        :param homogeneous: Return full 4x4 matrices with the constant bottom
+            row instead of the top three rows (keyword-only).
+        :param threads: Worker cap, same convention as :meth:`reach`. Results
+            do not depend on it.
+        :return: (K, N, 3, 4) array of ``[R | t]`` rows, or (K, N, 4, 4) with
+            ``homogeneous=True``, in the robot base frame and the model's
+            length unit. C-contiguous, so ``out[k]`` is a contiguous block per
+            frame. A row with any NaN joint is NaN in every frame.
+        """
+        threads = _threads_arg(threads)
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        return self._robot.batch_frame_poses(
+            _joint_array(joints),
+            [int(frame) for frame in frames],
+            ee_matrix,
+            homogeneous=homogeneous,
+            threads=threads,
+        )
 
     def forward_frames(
         self,
@@ -224,14 +284,7 @@ class Robot:
         :param ee_transform: End effector transformation (optional).
         :return: List of RigidTransform objects.
         """
-        if hasattr(joints, "to_numpy"):
-            if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
-            else:
-                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
-        else:
-            arr = np.asarray(joints)
-        joints_array = np.ascontiguousarray(arr, dtype=np.float64)
+        joints_array = _joint_array(joints)
 
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_forward(joints_array, ee_matrix)
@@ -311,13 +364,7 @@ class Robot:
             Results do not depend on it.
         :return: ReachResult with per-pose, per-branch arrays.
         """
-        if threads == 0:
-            warnings.warn(
-                "threads=0 is deprecated, use threads=None for the global pool",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            threads = None
+        threads = _threads_arg(threads)
         matrix_array = np.ascontiguousarray(poses.as_matrix().reshape(-1, 16), dtype=np.float64)
         limits = None
         if joint_limits is not None:
