@@ -56,7 +56,7 @@ def main() -> None:
     n = len(poses)
 
     single, t_single = timed(lambda: robot.batch_inverse(poses, current_joints=HOME))
-    result, t_reach = timed(lambda: robot.reach(poses, NJ165_LIMITS))
+    result, t_reach = timed(lambda: robot.reach(poses, NJ165_LIMITS, threads=1))
 
     reachable_single = np.mean(~np.isnan(single[:, 0]))
     inside = result.limit_margin >= 0

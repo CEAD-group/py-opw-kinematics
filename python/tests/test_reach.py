@@ -360,14 +360,62 @@ def test_sigma_min_skipped_outside_limits(robot: Robot):
     assert np.array_equal(limited.sigma_min[0, inside], unlimited.sigma_min[0, inside])
 
 
-@pytest.mark.parametrize("threads", [0, 2, 4])
-def test_threads_give_identical_results(robot: Robot, threads: int):
+REACH_FIELDS = ("joints", "limit_margin", "extension", "sigma_min", "wrist")
+
+
+def _assert_same(a: ReachResult, b: ReachResult) -> None:
+    for name in REACH_FIELDS:
+        assert np.array_equal(getattr(a, name), getattr(b, name), equal_nan=True)
+
+
+@pytest.mark.parametrize("threads", [None, 2, 4])
+def test_threads_give_identical_results(robot: Robot, threads: int | None):
     samples = _grid_joints()[::3]
     poses = robot.batch_forward(samples)
-    single = robot.reach(poses, NJ165_LIMITS)
-    threaded = robot.reach(poses, NJ165_LIMITS, threads=threads)
-    for name in ("joints", "limit_margin", "extension", "sigma_min", "wrist"):
-        assert np.array_equal(getattr(single, name), getattr(threaded, name), equal_nan=True)
+    serial = robot.reach(poses, NJ165_LIMITS, threads=1)
+    _assert_same(serial, robot.reach(poses, NJ165_LIMITS, threads=threads))
+
+
+def test_threads_default_is_global_pool(robot: Robot):
+    poses = robot.batch_forward(_grid_joints()[::7])
+    _assert_same(robot.reach(poses, NJ165_LIMITS), robot.reach(poses, NJ165_LIMITS, threads=None))
+
+
+@pytest.mark.parametrize("n", [0, 1, 2, 3])
+@pytest.mark.parametrize("threads", [None, 1, 4])
+def test_threads_small_inputs(robot: Robot, n: int, threads: int | None):
+    poses = robot.batch_forward(_grid_joints()[:n])
+    serial = robot.reach(poses, NJ165_LIMITS, threads=1)
+    result = robot.reach(poses, NJ165_LIMITS, threads=threads)
+    assert result.joints.shape == (n, 8, 6)
+    _assert_same(serial, result)
+
+
+def test_threads_zero_is_deprecated_alias_for_none(robot: Robot):
+    poses = robot.batch_forward(_grid_joints()[::7])
+    with pytest.warns(DeprecationWarning, match="threads=0"):
+        deprecated = robot.reach(poses, NJ165_LIMITS, threads=0)
+    _assert_same(robot.reach(poses, NJ165_LIMITS, threads=None), deprecated)
+
+
+def test_internal_threads_zero_warns(robot: Robot):
+    poses = robot.batch_forward(_grid_joints()[:4]).as_matrix().reshape(-1, 16)
+    with pytest.warns(DeprecationWarning, match="threads=0"):
+        robot._robot.reach(poses, threads=0)
+
+
+@pytest.mark.parametrize("threads", [-1, -8])
+def test_threads_below_zero_raise(robot: Robot, threads: int):
+    poses = robot.forward(_j(HOME))
+    with pytest.raises(ValueError, match="threads"):
+        robot.reach(poses, threads=threads)
+    with pytest.raises(ValueError, match="threads"):
+        robot._robot.reach(poses.as_matrix().reshape(-1, 16), threads=threads)
+
+
+def test_threads_is_keyword_only(robot: Robot):
+    with pytest.raises(TypeError):
+        robot.reach(robot.forward(_j(HOME)), None, None, 1)  # type: ignore[misc]
 
 
 def test_threads_release_the_gil(robot: Robot):
@@ -393,7 +441,7 @@ def test_threads_release_the_gil(robot: Robot):
             time.sleep(0.001)
         before = ticks
         t0 = time.perf_counter()
-        robot.reach(poses, NJ165_LIMITS)
+        robot.reach(poses, NJ165_LIMITS, threads=1)
         elapsed = time.perf_counter() - t0
     finally:
         done.set()
@@ -401,8 +449,3 @@ def test_threads_release_the_gil(robot: Robot):
     # The spinner sleeps 1 ms per tick, so a GIL-holding kernel would stall it.
     assert elapsed > 0.02, "kernel too fast to tell; use a larger grid"
     assert ticks - before > 5
-
-
-def test_negative_threads_rejected(robot: Robot):
-    with pytest.raises(ValueError):
-        robot.reach(robot.forward(_j(HOME)), threads=-1)

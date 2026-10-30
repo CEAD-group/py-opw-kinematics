@@ -9,8 +9,11 @@ use numpy::ndarray::{Array1, Array2, Array3};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use rs_opw_kinematics::kinematics_impl::OPWKinematics;
 use rs_opw_kinematics::parameters::opw_kinematics::Parameters;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[pyclass]
 struct Robot {
@@ -390,18 +393,20 @@ impl Robot {
     /// Branch slot s = 4 * wrist_flip + 2 * shoulder + elbow; NaN means the branch does not exist.
     /// sigma_min is NaN for branches with a negative limit_margin: those are unusable, so the
     /// Jacobian is not evaluated for them.
-    /// threads: worker threads for the per-pose loop, 0 for one per available core. The GIL is
+    /// threads: keyword-only worker cap for this call; None uses the global pool, 1 runs in the
+    /// calling thread, below 1 raises ValueError (0 is a deprecated alias for None). The GIL is
     /// released while the loop runs, so callers can thread over chunks themselves.
     /// No continuity selection, limit filtering or sorting is applied.
-    #[pyo3(signature = (poses, joint_limits=None, ee_transform=None, threads=1))]
+    #[pyo3(signature = (poses, joint_limits=None, ee_transform=None, *, threads=None))]
     fn reach<'py>(
         &self,
         py: Python<'py>,
         poses: PyReadonlyArray2<'py, f64>,
         joint_limits: Option<[[f64; 2]; 6]>,
         ee_transform: Option<[[f64; 4]; 4]>,
-        threads: usize,
+        threads: Option<isize>,
     ) -> PyResult<ReachArrays> {
+        let workers = Workers::new(py, threads)?;
         let poses_array = poses.as_array();
         if poses_array.ncols() != 16 {
             return Err(pyo3::exceptions::PyValueError::new_err(
@@ -490,21 +495,7 @@ impl Robot {
         };
 
         py.detach(|| {
-            let mut sequential = || {
-                joints
-                    .chunks_mut(48)
-                    .zip(margins.chunks_mut(8))
-                    .zip(sigma.chunks_mut(8))
-                    .zip(wrist.chunks_mut(8))
-                    .zip(extension.iter_mut())
-                    .enumerate()
-                    .for_each(|(i, ((((j, m), s), w), e))| write(i, j, m, s, w, e));
-            };
-            if threads == 1 {
-                sequential();
-                return Ok(());
-            }
-            let mut parallel = || {
+            workers.install(n, || {
                 joints
                     .par_chunks_mut(48)
                     .zip(margins.par_chunks_mut(8))
@@ -512,20 +503,10 @@ impl Robot {
                     .zip(wrist.par_chunks_mut(8))
                     .zip(extension.par_iter_mut())
                     .enumerate()
+                    .with_min_len(workers.min_len())
                     .for_each(|(i, ((((j, m), s), w), e))| write(i, j, m, s, w, e));
-            };
-            if threads == 0 {
-                parallel();
-                return Ok(());
-            }
-            // A pool per call rather than the global one, so the thread count is honoured
-            // per call and the caller's own rayon configuration is left alone.
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build()
-                .map(|pool| pool.install(parallel))
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{}", e)))
-        })?;
+            })
+        });
 
         let err = |e: numpy::ndarray::ShapeError| pyo3::exceptions::PyValueError::new_err(format!("{}", e));
         Ok((
@@ -641,6 +622,86 @@ impl Robot {
         out.push(to_matrix_4x4(&tcp_transform));
 
         out
+    }
+}
+
+/// Where a call's parallel work runs, chosen by its `threads` argument.
+enum Workers {
+    /// `threads=None`: Rayon's global pool, so `RAYON_NUM_THREADS` applies.
+    Global,
+    /// `threads=1`: no pool at all, everything runs in the calling thread.
+    Serial,
+    /// `threads=n` for n >= 2: a cached pool of exactly n workers.
+    Pool(Arc<ThreadPool>),
+}
+
+/// Pools for `threads >= 2`, one per size, built on first use and kept for the
+/// life of the process, because spawning the threads costs more than a small batch.
+static POOLS: OnceLock<Mutex<HashMap<usize, Arc<ThreadPool>>>> = OnceLock::new();
+
+impl Workers {
+    fn new(py: Python<'_>, threads: Option<isize>) -> PyResult<Self> {
+        let n = match threads {
+            None => return Ok(Workers::Global),
+            Some(0) => {
+                let category = py.get_type::<pyo3::exceptions::PyDeprecationWarning>();
+                PyErr::warn(
+                    py,
+                    &category,
+                    c"threads=0 is deprecated, use threads=None for the global pool",
+                    1,
+                )?;
+                return Ok(Workers::Global);
+            }
+            Some(t) if t < 1 => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "threads must be a positive integer or None, got {}",
+                    t
+                )))
+            }
+            Some(1) => return Ok(Workers::Serial),
+            Some(t) => t as usize,
+        };
+        // A poisoned lock only means a panic elsewhere while holding it; the map is still valid.
+        let mut pools = POOLS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(pool) = pools.get(&n) {
+            return Ok(Workers::Pool(Arc::clone(pool)));
+        }
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(n)
+            .thread_name(move |i| format!("py-opw-kinematics-{}-{}", n, i))
+            .build()
+            .map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to start {} threads: {}",
+                    n, e
+                ))
+            })?;
+        let pool = Arc::new(pool);
+        pools.insert(n, Arc::clone(&pool));
+        Ok(Workers::Pool(pool))
+    }
+
+    /// Minimum items per Rayon job: `usize::MAX` never splits, so a parallel
+    /// iterator called outside any pool runs entirely in the calling thread.
+    fn min_len(&self) -> usize {
+        match self {
+            Workers::Serial => usize::MAX,
+            _ => 1,
+        }
+    }
+
+    /// Run `op`, whose parallel iterators cover `len` items, on these workers.
+    ///
+    /// With at most one item Rayon does not split, so the pool hop is skipped.
+    fn install<R: Send>(&self, len: usize, op: impl FnOnce() -> R + Send) -> R {
+        match self {
+            Workers::Pool(pool) if len > 1 => pool.install(op),
+            _ => op(),
+        }
     }
 }
 
