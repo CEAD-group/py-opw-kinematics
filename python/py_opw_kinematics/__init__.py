@@ -172,7 +172,7 @@ class Robot:
         """
         if hasattr(joints, "to_numpy"):
             if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
+                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
             else:
                 arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
         else:
@@ -226,7 +226,7 @@ class Robot:
         """
         if hasattr(joints, "to_numpy"):
             if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
+                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
             else:
                 arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
         else:
