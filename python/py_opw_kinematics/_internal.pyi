@@ -95,7 +95,8 @@ class Robot:
         poses: npt.NDArray[np.float64],
         joint_limits: list[tuple[float, float]] | None = None,
         ee_transform: npt.NDArray[np.float64] | None = None,
-        threads: int = 1,
+        *,
+        threads: int | None = None,
     ) -> tuple[
         npt.NDArray[np.float64],
         npt.NDArray[np.float64],
@@ -110,7 +111,9 @@ class Robot:
         :param joint_limits: Six (lower, upper) pairs in the robot's angle unit (optional).
             With limits, sigma_min is NaN for branches outside them.
         :param ee_transform: End effector transformation matrix (4x4) (optional).
-        :param threads: Worker threads for the per-pose loop, 0 for one per core.
+        :param threads: Keyword-only worker cap: None for the global pool, 1 for the
+            calling thread, n >= 2 for a cached pool of n. Below 1 raises ValueError,
+            except 0, a deprecated alias for None.
         :return: Tuple of (joints (n, 8, 6), limit_margin (n, 8), extension (n,),
             sigma_min (n, 8), wrist (n, 8)).
         """

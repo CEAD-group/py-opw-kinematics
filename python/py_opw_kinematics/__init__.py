@@ -5,6 +5,7 @@ Rotation handling is delegated to scipy.spatial.transform.Rotation for flexibili
 This library focuses on pure kinematics with 4x4 transformation matrices.
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -279,7 +280,8 @@ class Robot:
         poses: RigidTransform,
         joint_limits: ArrayLike | None = None,
         ee_transform: Optional["RigidTransform"] = None,
-        threads: int = 1,
+        *,
+        threads: int | None = None,
     ) -> ReachResult:
         """
         Compute all eight inverse-kinematics branches for multiple poses.
@@ -294,15 +296,23 @@ class Robot:
             angle unit (optional). Without limits every margin is ``+inf``.
             With limits, ``sigma_min`` is left NaN for branches outside them.
         :param ee_transform: End effector transformation (optional).
-        :param threads: Worker threads for the per-pose loop. The default 1 runs
-            in the calling thread; 0 uses one per available core. The GIL is
-            released either way, so a caller that already parallelises can keep
-            ``threads=1`` and chunk the poses itself. The pool is built per call,
-            so threading a small batch costs more than it saves.
+        :param threads: Worker cap for the per-pose loop (keyword-only). None
+            uses Rayon's process-wide pool, so ``RAYON_NUM_THREADS`` applies; 1
+            runs in the calling thread with no pool; n >= 2 uses a pool of n
+            threads, built on first use and cached per n for the process
+            lifetime. Below 1 raises ValueError, except 0, a deprecated alias
+            for None. The GIL is released either way, so a caller that already
+            parallelises can pass ``threads=1`` and chunk the poses itself.
+            Results do not depend on it.
         :return: ReachResult with per-pose, per-branch arrays.
         """
-        if threads < 0:
-            raise ValueError("threads must be >= 0")
+        if threads == 0:
+            warnings.warn(
+                "threads=0 is deprecated, use threads=None for the global pool",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            threads = None
         matrix_array = np.ascontiguousarray(poses.as_matrix().reshape(-1, 16), dtype=np.float64)
         limits = None
         if joint_limits is not None:
@@ -312,7 +322,7 @@ class Robot:
             limits = [tuple(row) for row in limits_array]
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         joints, limit_margin, extension, sigma_min, wrist = self._robot.reach(
-            matrix_array, limits, ee_matrix, threads
+            matrix_array, limits, ee_matrix, threads=threads
         )
         return ReachResult(
             joints=joints,
