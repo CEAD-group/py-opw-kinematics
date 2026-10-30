@@ -158,6 +158,26 @@ class Robot:
         :return: NumPy array of shape (n*6, 16) or (n*7, 16) with flattened 4x4 matrices.
         """
 
+    def batch_frame_points(
+        self,
+        joints: npt.NDArray[np.float64],
+        frames: list[int],
+        points: npt.NDArray[np.float64],
+        ee_transform: npt.NDArray[np.float64] | None = None,
+        *,
+        threads: int | None = None,
+    ) -> npt.NDArray[np.float64]:
+        """
+        World positions of fixed points on selected frames, for many joint rows.
+
+        :param joints: NumPy array of shape (n, 6) with joint angles.
+        :param frames: K frame indices: 0..5 for J1..J6, 6 for J6 with ee_transform.
+        :param points: NumPy array of shape (K, 3), each point in its frame's local coordinates.
+        :param ee_transform: End effector transformation matrix (4x4), required for frame 6.
+        :param threads: Keyword-only worker cap, same convention as reach.
+        :return: NumPy array of shape (n, K, 3) with positions in the base frame.
+        """
+
     def forward_frames(
         self,
         joints: tuple[float, float, float, float, float, float],

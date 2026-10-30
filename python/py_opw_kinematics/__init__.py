@@ -6,6 +6,7 @@ This library focuses on pure kinematics with 4x4 transformation matrices.
 """
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -27,6 +28,41 @@ _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 def _is_polars(frame: object) -> bool:
     # pandas 3.1 added DataFrame.select, so duck typing on it misreads a pandas frame.
     return type(frame).__module__.split(".")[0] == "polars"
+
+
+def _threads_arg(threads: int | None) -> int | None:
+    # stacklevel=3 points the warning at the caller of the public method.
+    if threads == 0:
+        warnings.warn(
+            "threads=0 is deprecated, use threads=None for the global pool",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return None
+    return threads
+
+
+def _as_point(offset: "ArrayLike | RigidTransform") -> np.ndarray:
+    # Only the translation of a 4x4 offset moves the point; its rotation is irrelevant here.
+    if isinstance(offset, RigidTransform):
+        return np.asarray(offset.translation, dtype=np.float64).reshape(3)
+    arr = np.asarray(offset, dtype=np.float64)
+    if arr.shape == (3,):
+        return arr
+    if arr.shape == (4, 4):
+        return arr[:3, 3]
+    raise ValueError(f"frame offset must be a 3-vector, a 4x4 matrix or a RigidTransform, got shape {arr.shape}")
+
+
+def _joint_array(joints: "NumpyOrDataFrame") -> np.ndarray:
+    if hasattr(joints, "to_numpy"):
+        if _is_polars(joints):
+            arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
+        else:
+            arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
+    else:
+        arr = np.asarray(joints)
+    return np.ascontiguousarray(arr, dtype=np.float64)
 
 
 # eq=False: the generated __eq__ and __hash__ do not work on ndarray fields.
@@ -170,19 +206,50 @@ class Robot:
         :return: RigidTransform with N*6 poses (or N*7 when ee_transform is given).
             Reshape to (N, 6, 4, 4) or (N, 7, 4, 4) for per-config access.
         """
-        if hasattr(joints, "to_numpy"):
-            if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
-            else:
-                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
-        else:
-            arr = np.asarray(joints)
-        joints_array = np.ascontiguousarray(arr, dtype=np.float64)
+        joints_array = _joint_array(joints)
 
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_joint_poses(joints_array, ee_matrix)
 
         return RigidTransform.from_matrix(result_array.reshape(-1, 4, 4))
+
+    def batch_frame_points(
+        self,
+        joints: "NumpyOrDataFrame",
+        frames: Sequence[tuple[int, "ArrayLike | RigidTransform"]],
+        ee_transform: Optional["RigidTransform"] = None,
+        *,
+        threads: int | None = None,
+    ) -> np.ndarray:
+        """
+        World positions of fixed points on selected frames, for many joint rows.
+
+        Equivalent to ``batch_joint_poses(joints, ee_transform)`` followed by
+        applying each offset to its frame, but evaluated in one pass without
+        building the per-frame matrices, only up to the deepest selected joint,
+        and with the GIL released.
+
+        :param joints: Joint angles as numpy array (N, 6), or DataFrame with
+            columns J1-J6, in the robot's angle unit.
+        :param frames: K ``(frame_index, offset)`` pairs. ``frame_index``
+            indexes the poses :meth:`batch_joint_poses` returns: 0..5 for
+            J1..J6, and 6 for the J6 pose with ``ee_transform`` applied, which
+            then must be given. ``offset`` is a point in that frame's local
+            coordinates: a 3-vector, or a 4x4 matrix or RigidTransform whose
+            translation is used.
+        :param ee_transform: End effector transformation, needed for frame 6.
+        :param threads: Worker cap, same convention as :meth:`reach`. Results
+            do not depend on it.
+        :return: (N, K, 3) positions in the robot base frame, in the model's
+            length unit. A row with any NaN joint is NaN for every point.
+        """
+        threads = _threads_arg(threads)
+        indices = [int(index) for index, _ in frames]
+        points = np.array([_as_point(offset) for _, offset in frames], dtype=np.float64).reshape(-1, 3)
+        ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
+        return self._robot.batch_frame_points(
+            _joint_array(joints), indices, points, ee_matrix, threads=threads
+        )
 
     def forward_frames(
         self,
@@ -224,14 +291,7 @@ class Robot:
         :param ee_transform: End effector transformation (optional).
         :return: List of RigidTransform objects.
         """
-        if hasattr(joints, "to_numpy"):
-            if _is_polars(joints):
-                arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,operator]
-            else:
-                arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
-        else:
-            arr = np.asarray(joints)
-        joints_array = np.ascontiguousarray(arr, dtype=np.float64)
+        joints_array = _joint_array(joints)
 
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
         result_array = self._robot.batch_forward(joints_array, ee_matrix)
@@ -311,13 +371,7 @@ class Robot:
             Results do not depend on it.
         :return: ReachResult with per-pose, per-branch arrays.
         """
-        if threads == 0:
-            warnings.warn(
-                "threads=0 is deprecated, use threads=None for the global pool",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            threads = None
+        threads = _threads_arg(threads)
         matrix_array = np.ascontiguousarray(poses.as_matrix().reshape(-1, 16), dtype=np.float64)
         limits = None
         if joint_limits is not None:

@@ -1,3 +1,4 @@
+mod frame_points;
 mod kinematic_model;
 mod reach;
 use crate::kinematic_model::KinematicModel;
@@ -384,6 +385,94 @@ impl Robot {
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?;
 
         Ok(result_array.into_pyarray(py).into())
+    }
+
+    /// World positions of fixed points on selected frames, per joint row.
+    /// Input: joints array of shape (n, 6); frames: K indices into the poses batch_joint_poses
+    /// returns (0..5 for J1..J6, 6 for J6 with ee_transform, which then must be given);
+    /// points: (K, 3) offsets, each in its frame's local coordinates.
+    /// Output: (n, K, 3) positions in the base frame. A row with any NaN joint is all NaN.
+    /// threads: same convention as reach. Only the chain up to the deepest selected joint
+    /// is evaluated, and no per-frame pose is built.
+    #[pyo3(signature = (joints, frames, points, ee_transform=None, *, threads=None))]
+    fn batch_frame_points<'py>(
+        &self,
+        py: Python<'py>,
+        joints: PyReadonlyArray2<'py, f64>,
+        frames: Vec<usize>,
+        points: PyReadonlyArray2<'py, f64>,
+        ee_transform: Option<[[f64; 4]; 4]>,
+        threads: Option<isize>,
+    ) -> PyResult<Py<PyArray3<f64>>> {
+        let workers = Workers::new(py, threads)?;
+        let joints_array = joints.as_array();
+        if joints_array.ncols() != 6 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "joints must have shape (n, 6)",
+            ));
+        }
+        let points_array = points.as_array();
+        if points_array.ncols() != 3 || points_array.nrows() != frames.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "points must have shape ({}, 3), one per frame",
+                frames.len()
+            )));
+        }
+
+        let mut selected: Vec<(usize, Vector3<f64>)> = Vec::with_capacity(frames.len());
+        for (k, &frame) in frames.iter().enumerate() {
+            let point = Vector3::new(
+                points_array[(k, 0)],
+                points_array[(k, 1)],
+                points_array[(k, 2)],
+            );
+            match (frame, ee_transform) {
+                (0..=5, _) => selected.push((frame, point)),
+                // Same convention as joint_poses: t = t_j6 + R_j6 * R_ee * (t_ee + p).
+                (6, Some(ee)) => {
+                    let flattened: Vec<f64> = ee.into_iter().flatten().collect();
+                    let matrix = nalgebra::Matrix4::from_row_slice(&flattened);
+                    let ee_rotation: nalgebra::Matrix3<f64> =
+                        matrix.fixed_view::<3, 3>(0, 0).into();
+                    let ee_translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+                    selected.push((5, ee_rotation * (ee_translation + point)));
+                }
+                (6, None) => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "frame 6 is the end-effector frame and needs ee_transform",
+                    ))
+                }
+                _ => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "frame index must be in 0..=6, got {}",
+                        frame
+                    )))
+                }
+            }
+        }
+        let kernel = frame_points::FramePoints::new(&self.parameters, self.degrees, &selected);
+
+        let n = joints_array.nrows();
+        let width = kernel.count() * 3;
+        // Copied for the same reason as in reach: the loop then runs without the GIL.
+        let rows: Vec<f64> = joints_array.iter().copied().collect();
+        let mut out = vec![0.0f64; n * width];
+
+        if width > 0 {
+            py.detach(|| {
+                workers.install(n, || {
+                    out.par_chunks_mut(width)
+                        .zip(rows.par_chunks(6))
+                        .with_min_len(workers.min_len())
+                        .for_each(|(o, q)| kernel.eval(q, o));
+                })
+            });
+        }
+
+        Ok(Array3::from_shape_vec((n, kernel.count(), 3), out)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?
+            .into_pyarray(py)
+            .into())
     }
 
     /// All eight inverse-kinematics branches per pose, with per-branch margins.
