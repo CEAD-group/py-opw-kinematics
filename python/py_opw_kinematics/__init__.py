@@ -42,18 +42,6 @@ def _threads_arg(threads: int | None) -> int | None:
     return threads
 
 
-def _as_point(offset: "ArrayLike | RigidTransform") -> np.ndarray:
-    # Only the translation of a 4x4 offset moves the point; its rotation is irrelevant here.
-    if isinstance(offset, RigidTransform):
-        return np.asarray(offset.translation, dtype=np.float64).reshape(3)
-    arr = np.asarray(offset, dtype=np.float64)
-    if arr.shape == (3,):
-        return arr
-    if arr.shape == (4, 4):
-        return arr[:3, 3]
-    raise ValueError(f"frame offset must be a 3-vector, a 4x4 matrix or a RigidTransform, got shape {arr.shape}")
-
-
 def _joint_array(joints: "NumpyOrDataFrame") -> np.ndarray:
     if hasattr(joints, "to_numpy"):
         if _is_polars(joints):
@@ -213,42 +201,47 @@ class Robot:
 
         return RigidTransform.from_matrix(result_array.reshape(-1, 4, 4))
 
-    def batch_frame_points(
+    def batch_frame_poses(
         self,
         joints: "NumpyOrDataFrame",
-        frames: Sequence[tuple[int, "ArrayLike | RigidTransform"]],
+        frames: Sequence[int],
         ee_transform: Optional["RigidTransform"] = None,
         *,
+        homogeneous: bool = False,
         threads: int | None = None,
     ) -> np.ndarray:
         """
-        World positions of fixed points on selected frames, for many joint rows.
+        Selected per-joint frames for many joint rows, as one array per frame.
 
-        Equivalent to ``batch_joint_poses(joints, ee_transform)`` followed by
-        applying each offset to its frame, but evaluated in one pass without
-        building the per-frame matrices, only up to the deepest selected joint,
-        and with the GIL released.
+        Bit-identical to ``batch_joint_poses(joints, ee_transform)`` reshaped
+        to (N, P, 4, 4) and indexed with ``frames``, but evaluated only up to
+        the deepest selected joint, written frame-major, and with the GIL
+        released.
 
         :param joints: Joint angles as numpy array (N, 6), or DataFrame with
             columns J1-J6, in the robot's angle unit.
-        :param frames: K ``(frame_index, offset)`` pairs. ``frame_index``
-            indexes the poses :meth:`batch_joint_poses` returns: 0..5 for
-            J1..J6, and 6 for the J6 pose with ``ee_transform`` applied, which
-            then must be given. ``offset`` is a point in that frame's local
-            coordinates: a 3-vector, or a 4x4 matrix or RigidTransform whose
-            translation is used.
+        :param frames: K indices into the poses :meth:`batch_joint_poses`
+            returns: 0..5 for J1..J6, and 6 for the J6 pose with
+            ``ee_transform`` applied, which then must be given. Repeats are
+            allowed.
         :param ee_transform: End effector transformation, needed for frame 6.
+        :param homogeneous: Return full 4x4 matrices with the constant bottom
+            row instead of the top three rows (keyword-only).
         :param threads: Worker cap, same convention as :meth:`reach`. Results
             do not depend on it.
-        :return: (N, K, 3) positions in the robot base frame, in the model's
-            length unit. A row with any NaN joint is NaN for every point.
+        :return: (K, N, 3, 4) array of ``[R | t]`` rows, or (K, N, 4, 4) with
+            ``homogeneous=True``, in the robot base frame and the model's
+            length unit. C-contiguous, so ``out[k]`` is a contiguous block per
+            frame. A row with any NaN joint is NaN in every frame.
         """
         threads = _threads_arg(threads)
-        indices = [int(index) for index, _ in frames]
-        points = np.array([_as_point(offset) for _, offset in frames], dtype=np.float64).reshape(-1, 3)
         ee_matrix = None if ee_transform is None else ee_transform.as_matrix()
-        return self._robot.batch_frame_points(
-            _joint_array(joints), indices, points, ee_matrix, threads=threads
+        return self._robot.batch_frame_poses(
+            _joint_array(joints),
+            [int(frame) for frame in frames],
+            ee_matrix,
+            homogeneous=homogeneous,
+            threads=threads,
         )
 
     def forward_frames(

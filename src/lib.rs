@@ -1,4 +1,4 @@
-mod frame_points;
+mod frame_poses;
 mod kinematic_model;
 mod reach;
 use crate::kinematic_model::KinematicModel;
@@ -6,8 +6,8 @@ use crate::kinematic_model::KinematicModel;
 use nalgebra::{Isometry3, Rotation3, Translation3, Vector3};
 use pyo3::prelude::*;
 
-use numpy::ndarray::{Array1, Array2, Array3};
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray2};
+use numpy::ndarray::{Array1, Array2, Array3, Array4};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4, PyReadonlyArray2};
 use rs_opw_kinematics::kinematic_traits::{Kinematics, Pose};
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -387,23 +387,23 @@ impl Robot {
         Ok(result_array.into_pyarray(py).into())
     }
 
-    /// World positions of fixed points on selected frames, per joint row.
-    /// Input: joints array of shape (n, 6); frames: K indices into the poses batch_joint_poses
-    /// returns (0..5 for J1..J6, 6 for J6 with ee_transform, which then must be given);
-    /// points: (K, 3) offsets, each in its frame's local coordinates.
-    /// Output: (n, K, 3) positions in the base frame. A row with any NaN joint is all NaN.
-    /// threads: same convention as reach. Only the chain up to the deepest selected joint
-    /// is evaluated, and no per-frame pose is built.
-    #[pyo3(signature = (joints, frames, points, ee_transform=None, *, threads=None))]
-    fn batch_frame_points<'py>(
+    /// Selected frames of batch_joint_poses, frame-major.
+    /// Input: joints array of shape (n, 6); frames: K indices into the poses joint_poses
+    /// returns (0..=5 for J1..J6, 6 for J6 with ee_transform, which then must be given).
+    /// Output: (K, n, 3, 4) row-major [R | t], or (K, n, 4, 4) when homogeneous, so each
+    /// frame is one contiguous block. Bit-identical to batch_joint_poses; a row with any
+    /// NaN joint is all NaN. threads: same convention as reach. Only the chain up to the
+    /// deepest selected joint is evaluated.
+    #[pyo3(signature = (joints, frames, ee_transform=None, *, homogeneous=false, threads=None))]
+    fn batch_frame_poses<'py>(
         &self,
         py: Python<'py>,
         joints: PyReadonlyArray2<'py, f64>,
         frames: Vec<usize>,
-        points: PyReadonlyArray2<'py, f64>,
         ee_transform: Option<[[f64; 4]; 4]>,
+        homogeneous: bool,
         threads: Option<isize>,
-    ) -> PyResult<Py<PyArray3<f64>>> {
+    ) -> PyResult<Py<PyArray4<f64>>> {
         let workers = Workers::new(py, threads)?;
         let joints_array = joints.as_array();
         if joints_array.ncols() != 6 {
@@ -411,65 +411,64 @@ impl Robot {
                 "joints must have shape (n, 6)",
             ));
         }
-        let points_array = points.as_array();
-        if points_array.ncols() != 3 || points_array.nrows() != frames.len() {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "points must have shape ({}, 3), one per frame",
-                frames.len()
-            )));
-        }
-
-        let mut selected: Vec<(usize, Vector3<f64>)> = Vec::with_capacity(frames.len());
-        for (k, &frame) in frames.iter().enumerate() {
-            let point = Vector3::new(
-                points_array[(k, 0)],
-                points_array[(k, 1)],
-                points_array[(k, 2)],
-            );
-            match (frame, ee_transform) {
-                (0..=5, _) => selected.push((frame, point)),
-                // Same convention as joint_poses: t = t_j6 + R_j6 * R_ee * (t_ee + p).
-                (6, Some(ee)) => {
-                    let flattened: Vec<f64> = ee.into_iter().flatten().collect();
-                    let matrix = nalgebra::Matrix4::from_row_slice(&flattened);
-                    let ee_rotation: nalgebra::Matrix3<f64> =
-                        matrix.fixed_view::<3, 3>(0, 0).into();
-                    let ee_translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
-                    selected.push((5, ee_rotation * (ee_translation + point)));
-                }
-                (6, None) => {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "frame 6 is the end-effector frame and needs ee_transform",
-                    ))
-                }
-                _ => {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "frame index must be in 0..=6, got {}",
-                        frame
-                    )))
-                }
+        for &frame in &frames {
+            if frame > 6 {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "frame index must be in 0..=6, got {}",
+                    frame
+                )));
+            }
+            if frame == 6 && ee_transform.is_none() {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "frame 6 is the end-effector frame and needs ee_transform",
+                ));
             }
         }
-        let kernel = frame_points::FramePoints::new(&self.parameters, self.degrees, &selected);
+        let ee = ee_transform.map(|ee_matrix| {
+            let flattened: Vec<f64> = ee_matrix.into_iter().flatten().collect();
+            let matrix = nalgebra::Matrix4::from_row_slice(&flattened);
+            let rotation: nalgebra::Matrix3<f64> = matrix.fixed_view::<3, 3>(0, 0).into();
+            let translation: Vector3<f64> = matrix.fixed_view::<3, 1>(0, 3).into();
+            (rotation, translation)
+        });
+        let kernel =
+            frame_poses::FramePoses::new(&self.parameters, self.degrees, frames, ee, homogeneous);
 
         let n = joints_array.nrows();
-        let width = kernel.count() * 3;
+        let k = kernel.count();
+        let stride = kernel.stride();
         // Copied for the same reason as in reach: the loop then runs without the GIL.
         let rows: Vec<f64> = joints_array.iter().copied().collect();
-        let mut out = vec![0.0f64; n * width];
+        let mut out = vec![0.0f64; k * n * stride];
 
-        if width > 0 {
+        if n > 0 && k > 0 {
+            // Rows are split into runs; each run gets its slice of every frame's block.
+            const RUN: usize = 256;
+            let runs = n.div_ceil(RUN);
+            let mut per_run: Vec<Vec<&mut [f64]>> =
+                (0..runs).map(|_| Vec::with_capacity(k)).collect();
+            for block in out.chunks_mut(n * stride) {
+                for (r, piece) in block.chunks_mut(RUN * stride).enumerate() {
+                    per_run[r].push(piece);
+                }
+            }
             py.detach(|| {
-                workers.install(n, || {
-                    out.par_chunks_mut(width)
-                        .zip(rows.par_chunks(6))
+                workers.install(runs, || {
+                    per_run
+                        .into_par_iter()
+                        .zip(rows.par_chunks(RUN * 6))
                         .with_min_len(workers.min_len())
-                        .for_each(|(o, q)| kernel.eval(q, o));
+                        .for_each(|(mut blocks, run)| {
+                            for (i, q) in run.chunks(6).enumerate() {
+                                kernel.eval(q, &mut blocks, i);
+                            }
+                        });
                 })
             });
         }
 
-        Ok(Array3::from_shape_vec((n, kernel.count(), 3), out)
+        let side = if homogeneous { 4 } else { 3 };
+        Ok(Array4::from_shape_vec((k, n, side, 4), out)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{}", e)))?
             .into_pyarray(py)
             .into())
