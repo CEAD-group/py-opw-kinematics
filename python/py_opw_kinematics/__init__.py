@@ -24,6 +24,11 @@ if TYPE_CHECKING:
 _JOINT_COLS = ["J1", "J2", "J3", "J4", "J5", "J6"]
 
 
+def _is_polars(frame: object) -> bool:
+    # pandas 3.1 added DataFrame.select, so duck typing on it misreads a pandas frame.
+    return type(frame).__module__.split(".")[0] == "polars"
+
+
 # eq=False: the generated __eq__ and __hash__ do not work on ndarray fields.
 @dataclass(frozen=True, eq=False)
 class ReachResult:
@@ -166,7 +171,7 @@ class Robot:
             Reshape to (N, 6, 4, 4) or (N, 7, 4, 4) for per-config access.
         """
         if hasattr(joints, "to_numpy"):
-            if hasattr(joints, "select"):
+            if _is_polars(joints):
                 arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
             else:
                 arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
@@ -220,7 +225,7 @@ class Robot:
         :return: List of RigidTransform objects.
         """
         if hasattr(joints, "to_numpy"):
-            if hasattr(joints, "select"):
+            if _is_polars(joints):
                 arr = joints.select(_JOINT_COLS).to_numpy()  # type: ignore[operator]
             else:
                 arr = joints[_JOINT_COLS].to_numpy()  # type: ignore[union-attr,attr-defined]
@@ -252,7 +257,7 @@ class Robot:
         if current_joints is not None:
             if hasattr(current_joints, "to_numpy"):
                 # DataFrame-like inputs (Pandas, Polars)
-                is_polars = hasattr(current_joints, "select")
+                is_polars = _is_polars(current_joints)
                 if is_polars:
                     arr = current_joints.select(_JOINT_COLS).to_numpy()  # type: ignore[union-attr,attr-defined,operator]
                     output_kwargs = {"schema": _JOINT_COLS}
