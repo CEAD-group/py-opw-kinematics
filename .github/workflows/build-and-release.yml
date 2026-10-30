@@ -62,7 +62,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14
+          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14 3.15
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
@@ -123,7 +123,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14
+          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14 3.15
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
@@ -156,7 +156,7 @@ jobs:
   #       uses: PyO3/maturin-action@v1
   #       with:
   #         target: ${{ matrix.platform.target }}
-  #         args: --release --out dist --interpreter 3.11 3.12 3.13 3.14
+  #         args: --release --out dist --interpreter 3.11 3.12 3.13 3.14 3.15
   #         sccache: 'true'
   #         manylinux: musllinux_1_2
   #     - name: Upload wheels
@@ -185,6 +185,7 @@ jobs:
             3.12
             3.13
             3.14
+            3.15
           architecture: ${{ matrix.platform.target }}
       - name: Update Cargo.toml Version
         if: startsWith(github.ref, 'refs/tags/')
@@ -197,7 +198,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14
+          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14 3.15
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -223,6 +224,7 @@ jobs:
             3.12
             3.13
             3.14
+            3.15
       - name: Update Cargo.toml Version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -233,7 +235,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14
+          args: --release --out dist --interpreter 3.11 3.12 3.13 3.14 3.15
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
